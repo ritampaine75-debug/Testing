@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MediaPipe Face Mesh Demo</title>
+  
+  <!-- Import MediaPipe Stylesheets and Scripts via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background-color: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: white;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      position: relative;
+      width: 1280px;
+      height: 720px;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    /* Hide the raw video, we will draw it on canvas */
+    .input_video {
+      display: none;
+    }
+
+    /* The output canvas */
+    .output_canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1); /* Mirror effect like a selfie camera */
+    }
+
+    /* Stats overlay to look like your screenshot */
+    .stats-overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 10;
+      pointer-events: none; /* Let clicks pass through */
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <!-- Overlay for FPS/Stats -->
+    <div class="stats-overlay" id="stats-box">
+      Input Image size: <span id="size-val">Loading...</span><br>
+      FPS: <span id="fps-val">0</span>
+    </div>
+
+    <!-- Hidden Video Element -->
+    <video class="input_video"></video>
+    <!-- Canvas for drawing -->
+    <canvas class="output_canvas" width="1280" height="720"></canvas>
+  </div>
+
+  <script>
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const statsFps = document.getElementById('fps-val');
+    const statsSize = document.getElementById('size-val');
+
+    let lastFrameTime = 0;
+    let frameCount = 0;
+
+    // This function runs every time MediaPipe processes a frame
+    function onResults(results) {
+      // Calculate simple FPS
+      const now = performance.now();
+      if (now - lastFrameTime >= 1000) {
+        statsFps.innerText = frameCount;
+        frameCount = 0;
+        lastFrameTime = now;
+      }
+      frameCount++;
+      
+      // Update resolution text
+      statsSize.innerText = `${canvasElement.width}x${canvasElement.height}`;
+
+      // 1. Draw the Video Feed
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 2. Draw the Face Mesh if a face is detected
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          
+          // Draw the mesh (tesselation) - The lines connecting dots
+          // We make them thin and semi-transparent white/gray
+          drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION,
+                         {color: '#C0C0C070', lineWidth: 1});
+
+          // Draw the dots (landmarks)
+          // We can colorize specific parts (Lips, Eyes) to look like your image
+          
+          // Draw Everything else normally
+          drawLandmarks(canvasCtx, landmarks, {
+              color: '#FF0000', // Red dots
+              lineWidth: 0, 
+              radius: 1
+          });
+
+          // Optional: Highlight lips specifically to look like the image heat map
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FF3030', lineWidth: 2});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030', lineWidth: 2});
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#FF3030', lineWidth: 2});
+        }
+      }
+      canvasCtx.restore();
+    }
+
+    // Initialize Face Mesh
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true, // This enables detailed lips and eyes
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(onResults);
+
+    // Initialize Camera
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({image: videoElement});
+      },
+      width: 1280,
+      height: 720
+    });
+
+    camera.start();
+  </script>
+
+</body>
+</html>
