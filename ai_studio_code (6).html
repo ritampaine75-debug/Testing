@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finger Counter AI</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --highlight-color: #00ffcc;
+            --secondary-color: #2c2c2c;
+            --error-color: #ff4d4d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: var(--highlight-color);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            font-weight: 400;
+            margin-bottom: 20px;
+            color: #aaaaaa;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            aspect-ratio: 4/3;
+            background-color: var(--secondary-color);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 2px solid #333;
+            margin-bottom: 20px;
+        }
+
+        /* Mirror the video and canvas for a natural feel */
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); 
+        }
+
+        .status-box {
+            background-color: var(--secondary-color);
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 640px;
+            border-left: 5px solid var(--highlight-color);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+
+        .instruction-text {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .result-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+
+        .error {
+            color: var(--error-color);
+            border-left-color: var(--error-color);
+        }
+
+        /* Loading Spinner */
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: var(--highlight-color);
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Hide the actual video element, we draw on canvas or just overlay */
+        /* Keeping video visible but behind canvas is standard */
+    </style>
+</head>
+<body>
+
+    <h1>Finger Counter AI</h1>
+    <h2>Real-Time Finger Detection</h2>
+
+    <div class="video-container">
+        <video id="input_video" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <div class="status-box" id="status_box">
+        <p class="instruction-text">Show your fingers clearly in front of the camera</p>
+        <div id="result_display" class="result-text">
+            <span class="loader" id="loader"></span> Waiting for hand detection...
+        </div>
+    </div>
+
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const resultDisplay = document.getElementById('result_display');
+        const statusBox = document.getElementById('status_box');
+        const loader = document.getElementById('loader');
+
+        let cameraAccessGranted = false;
+
+        function onResults(results) {
+            // Adjust canvas size to match video
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // Draw the video frame to the canvas
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // Process the first detected hand
+                const landmarks = results.multiHandLandmarks[0];
+                const handedness = results.multiHandedness[0].label; // Left or Right
+
+                // Draw landmarks
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00ffcc', lineWidth: 5});
+                drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 2, radius: 4});
+
+                // Count fingers
+                const fingerCount = countFingers(landmarks, handedness);
+
+                // Update UI
+                resultDisplay.innerText = `You are showing ${fingerCount} fingers`;
+                statusBox.classList.remove('error');
+                statusBox.style.borderLeftColor = '#00ffcc'; // Restore highlight color
+            } else {
+                // No hand detected
+                resultDisplay.innerText = "No hand detected. Please try again.";
+                statusBox.classList.add('error'); // Use error styling for visibility
+                statusBox.style.borderLeftColor = '#ff4d4d'; // Red warning
+            }
+            canvasCtx.restore();
+        }
+
+        function countFingers(landmarks, handedness) {
+            let count = 0;
+
+            // Landmark Indices
+            // Thumb: 4, Index: 8, Middle: 12, Ring: 16, Pinky: 20
+            // Base Joints (MCP/PIP): Thumb: 2/3, Index: 6, Middle: 10, Ring: 14, Pinky: 18
+
+            // 1. Thumb detection
+            // Thumb movement is horizontal usually.
+            // Right Hand: Thumb is on the left (x coordinates). Open if Tip.x < IP.x
+            // Left Hand: Thumb is on the right. Open if Tip.x > IP.x
+            // Note: MediaPipe Hands 'Right' means the user's right hand. 
+            // In selfie mode (mirrored), Logic needs to align with how we perceive it.
+            // Let's rely on standard geometry. 
+            
+            // Getting Coordinates
+            const thumbTip = landmarks[4];
+            const thumbIP = landmarks[3];
+            const thumbMCP = landmarks[2];
+
+            // Handedness logic for Thumb
+            // If Handedness is "Right", thumb is to the left of the palm.
+            if (handedness === 'Right') { 
+                // Because of mirror effect in CSS, 'Right' hand appears on right side of screen?
+                // Actually MediaPipe coordinates are normalized (0-1). 
+                // Let's test standard assumptions:
+                if (thumbTip.x < thumbIP.x) {
+                    count++;
+                }
+            } else {
+                // Left Hand
+                if (thumbTip.x > thumbIP.x) {
+                    count++;
+                }
+            }
+
+            // 2. Fingers (Index, Middle, Ring, Pinky)
+            // Vertical check: Tip y < PIP y (y=0 is top)
+            
+            // Index (8 vs 6)
+            if (landmarks[8].y < landmarks[6].y) count++;
+            
+            // Middle (12 vs 10)
+            if (landmarks[12].y < landmarks[10].y) count++;
+            
+            // Ring (16 vs 14)
+            if (landmarks[16].y < landmarks[14].y) count++;
+            
+            // Pinky (20 vs 18)
+            if (landmarks[20].y < landmarks[18].y) count++;
+
+            return count;
+        }
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        // Initialize Camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        // Start Camera and Handle Permissions
+        camera.start()
+            .then(() => {
+                cameraAccessGranted = true;
+                // Once camera starts, the loader will remain until first result
+            })
+            .catch(err => {
+                console.error("Camera error:", err);
+                resultDisplay.innerText = "Camera access denied. Please allow camera permission.";
+                statusBox.classList.add('error');
+                if(loader) loader.style.display = 'none';
+            });
+
+    </script>
+</body>
+</html>
