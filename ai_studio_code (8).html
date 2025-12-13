@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaking 3D Avatar</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --skin-color: #fce5d6;
+            --feature-color: #4a4a4a;
+            --lip-color: #d66a6a;
+            --cube-size: 200px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Start Overlay */
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background: #00ffcc;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #000;
+            box-shadow: 0 0 20px rgba(0,255,204,0.5);
+            transition: transform 0.2s;
+        }
+
+        button:hover { transform: scale(1.05); }
+
+        /* Preview Video (Picture-in-Picture) */
+        .video-preview {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 120px;
+            height: 90px;
+            border-radius: 10px;
+            border: 2px solid #555;
+            overflow: hidden;
+            z-index: 50;
+            opacity: 0.7;
+        }
+        video {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); /* Mirror */
+        }
+
+        /* 3D Scene */
+        .scene {
+            width: 100%;
+            height: 100%;
+            perspective: 800px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .head-wrapper {
+            position: relative;
+            transform-style: preserve-3d;
+            transform: translateZ(-100px);
+            will-change: transform;
+        }
+
+        /* The Head (Cube) */
+        .cube {
+            width: var(--cube-size);
+            height: var(--cube-size);
+            position: relative;
+            transform-style: preserve-3d;
+        }
+
+        .face {
+            position: absolute;
+            width: var(--cube-size);
+            height: var(--cube-size);
+            background: var(--skin-color);
+            border: 1px solid #e0cbbd;
+            opacity: 1;
+            /* Make it look slightly rounded */
+            border-radius: 20px;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.1);
+        }
+
+        /* Cube Construction */
+        .front  { transform: rotateY(0deg) translateZ(100px); z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .back   { transform: rotateY(180deg) translateZ(100px); background: #333; } /* Dark hair color for back */
+        .right  { transform: rotateY(90deg) translateZ(100px); background: #e0cbbd; }
+        .left   { transform: rotateY(-90deg) translateZ(100px); background: #e0cbbd; }
+        .top    { transform: rotateX(90deg) translateZ(100px); background: #333; } /* Hair on top */
+        .bottom { transform: rotateX(-90deg) translateZ(100px); background: #dcbfae; }
+
+        /* Facial Features (CSS Constructed) */
+        .eyes-row {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 20px;
+            margin-top: -20px;
+        }
+
+        .eye {
+            width: 40px;
+            height: 25px;
+            background: white;
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+
+        .pupil {
+            width: 15px;
+            height: 15px;
+            background: #222;
+            border-radius: 50%;
+            position: absolute;
+            top: 5px;
+            left: 12px;
+        }
+
+        .mouth-container {
+            width: 60px;
+            height: 40px; /* Max opening height */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mouth {
+            width: 50px;
+            height: 5px; /* Default closed state */
+            background: #440000;
+            border-radius: 20px;
+            transition: height 0.05s ease-out; /* Super fast transition for syncing */
+            border: 2px solid var(--lip-color);
+        }
+
+        /* Ears */
+        .ear {
+            position: absolute;
+            width: 30px;
+            height: 50px;
+            background: var(--skin-color);
+            border-radius: 50%;
+            top: 75px;
+            transform-style: preserve-3d;
+        }
+        .ear-left { left: -15px; transform: rotateY(-30deg); border-left: 2px solid #dcbfae; }
+        .ear-right { right: -15px; transform: rotateY(30deg); border-right: 2px solid #dcbfae; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Permission Overlay -->
+    <div id="overlay">
+        <h1 style="color:white; margin-bottom: 10px;">Talking 3D Avatar</h1>
+        <p style="color:#aaa; margin-bottom: 30px;">Requires Camera (Face Tracking) & Microphone (Lip Sync)</p>
+        <button onclick="startExperience()">Start Experience</button>
+    </div>
+
+    <!-- Hidden Inputs -->
+    <div class="video-preview">
+        <video id="input_video" playsinline muted></video>
+    </div>
+
+    <!-- 3D Scene -->
+    <div class="scene">
+        <div class="head-wrapper" id="head_control">
+            <!-- Ears attached to wrapper -->
+            <div class="cube">
+                <!-- Ears are logically attached to sides, but visualized here for simplicity -->
+                
+                <div class="face front">
+                    <!-- Eyes -->
+                    <div class="eyes-row">
+                        <div class="eye"><div class="pupil"></div></div>
+                        <div class="eye"><div class="pupil"></div></div>
+                    </div>
+                    <!-- Mouth -->
+                    <div class="mouth-container">
+                        <div class="mouth" id="avatar_mouth"></div>
+                    </div>
+                </div>
+                
+                <div class="face back"></div>
+                <div class="face right"></div>
+                <div class="face left"></div>
+                <div class="face top"></div>
+                <div class="face bottom"></div>
+            </div>
+            <!-- Absolute positioned ears relative to wrapper center -->
+             <div class="ear ear-left" style="left: -15px; position:absolute; transform: translateZ(50px) rotateY(-90deg);"></div>
+             <div class="ear ear-right" style="right: -15px; position:absolute; transform: translateZ(50px) rotateY(90deg);"></div>
+        </div>
+    </div>
+
+    <!-- AI Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const headWrapper = document.getElementById('head_control');
+        const mouthElement = document.getElementById('avatar_mouth');
+        const overlay = document.getElementById('overlay');
+
+        // Movement Smoothing Variables
+        let curX = 0, curY = 0, curRX = 0, curRY = 0, curRZ = 0;
+        const smooth = 0.2;
+
+        // Audio Context Variables
+        let audioContext, analyser, microphone, dataArray;
+        let isAudioRunning = false;
+
+        async function startExperience() {
+            overlay.style.display = 'none';
+
+            // 1. Setup Camera for Face Mesh
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await faceMesh.send({image: videoElement});
+                },
+                width: 640,
+                height: 480
+            });
+            await camera.start();
+
+            // 2. Setup Audio for Lip Sync
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                isAudioRunning = true;
+                
+                // Start Audio Loop
+                analyzeAudio();
+            } catch (err) {
+                console.error("Microphone access denied or error:", err);
+                alert("Microphone access needed for lip sync!");
+            }
+        }
+
+        // --- Audio Analysis Loop ---
+        function analyzeAudio() {
+            if (!isAudioRunning) return;
+            requestAnimationFrame(analyzeAudio);
+
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate average volume
+            let sum = 0;
+            // Focus on vocal frequencies (lower half of bins roughly)
+            for(let i = 0; i < dataArray.length / 2; i++) {
+                sum += dataArray[i];
+            }
+            let average = sum / (dataArray.length / 2);
+
+            // Map Volume to Mouth Height
+            // Threshold: 10 (ignore background noise)
+            // Max typical vol: ~100
+            let height = 5; // closed height
+            if (average > 10) {
+                // Scale factor: dampen the raw value
+                height = 5 + (average * 0.5); 
+            }
+            
+            // Cap max height
+            if (height > 40) height = 40;
+
+            mouthElement.style.height = `${height}px`;
+            
+            // Optional: widen mouth slightly when loud
+            let width = 50 + (average * 0.1);
+            if(width > 70) width = 70;
+            mouthElement.style.width = `${width}px`;
+        }
+
+        // --- Face Mesh Setup ---
+        const faceMesh = new FaceMesh({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+        }});
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults((results) => {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+
+                // 1. Position (Nose Tip: 1)
+                const nose = landmarks[1];
+                // Invert X for mirror effect
+                const tX = (0.5 - nose.x) * window.innerWidth;
+                const tY = (nose.y - 0.5) * window.innerHeight;
+
+                // 2. Rotation
+                // Yaw (Left/Right): Nose x vs Center x of cheeks
+                const leftCheek = landmarks[234];
+                const rightCheek = landmarks[454];
+                const midX = (leftCheek.x + rightCheek.x) / 2;
+                const tRY = (midX - nose.x) * 250; // Sensitive multiplier
+
+                // Pitch (Up/Down): Nose y vs Eye-line y
+                // Simple approx: Nose Y relative to center of face height
+                const tRX = (nose.y - 0.5) * 90;
+
+                // Roll (Tilt): Eye angle
+                const leftEye = landmarks[33];
+                const rightEye = landmarks[263];
+                const dx = rightEye.x - leftEye.x;
+                const dy = rightEye.y - leftEye.y;
+                const tRZ = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                // 3. Smooth & Apply
+                curX += (tX - curX) * smooth;
+                curY += (tY - curY) * smooth;
+                curRX += (tRX - curRX) * smooth;
+                curRY += (tRY - curRY) * smooth;
+                curRZ += (tRZ - curRZ) * smooth;
+
+                headWrapper.style.transform = `
+                    translateZ(-100px)
+                    translate3d(${curX}px, ${curY}px, 0px)
+                    rotateX(${-curRX}deg)
+                    rotateY(${-curRY}deg)
+                    rotateZ(${-curRZ}deg)
+                `;
+            }
+        });
+
+    </script>
+</body>
+</html>
