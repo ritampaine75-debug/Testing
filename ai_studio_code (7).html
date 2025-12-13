@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Controlled Cube</title>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --cube-color: #00ffff;
+            --cube-face-bg: rgba(0, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        /* UI Overlays */
+        .ui-layer {
+            position: absolute;
+            top: 20px;
+            z-index: 10;
+            text-align: center;
+            pointer-events: none;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--cube-color);
+            text-shadow: 0 0 10px var(--cube-color);
+            margin-bottom: 5px;
+        }
+
+        p { color: #888; font-size: 0.9rem; }
+
+        .loading {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #fff;
+            display: block;
+        }
+
+        /* Video / Canvas Container (Hidden or Background) */
+        .input-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 160px;
+            height: 120px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #333;
+            z-index: 5;
+            opacity: 0.8;
+        }
+
+        video, canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+
+        /* 3D Scene Container */
+        .scene {
+            width: 100%;
+            height: 100vh;
+            perspective: 1000px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* The Cube */
+        .cube-wrapper {
+            position: relative;
+            transform-style: preserve-3d;
+            /* Initial state */
+            transform: translateZ(-200px); 
+            transition: transform 0.1s cubic-bezier(0.215, 0.610, 0.355, 1.000);
+            will-change: transform;
+        }
+
+        .cube {
+            width: 200px;
+            height: 200px;
+            position: relative;
+            transform-style: preserve-3d;
+        }
+
+        .face {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            background: var(--cube-face-bg);
+            border: 2px solid var(--cube-color);
+            box-shadow: 0 0 15px var(--cube-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: var(--cube-color);
+            font-weight: bold;
+            opacity: 0.8;
+        }
+
+        /* Constructing the Cube */
+        .front  { transform: rotateY(0deg) translateZ(100px); }
+        .back   { transform: rotateY(180deg) translateZ(100px); }
+        .right  { transform: rotateY(90deg) translateZ(100px); }
+        .left   { transform: rotateY(-90deg) translateZ(100px); }
+        .top    { transform: rotateX(90deg) translateZ(100px); }
+        .bottom { transform: rotateX(-90deg) translateZ(100px); }
+
+        /* Small dot in center to visualize origin */
+        .center-dot {
+            width: 10px;
+            height: 10px;
+            background: red;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            opacity: 0.2;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="ui-layer">
+        <h1>Face Sync Cube</h1>
+        <p>Move your head to control the cube</p>
+        <span id="status_text" class="loading">Initializing Camera & AI...</span>
+    </div>
+
+    <!-- Small Self-View Preview -->
+    <div class="input-container">
+        <video id="input_video" playsinline></video>
+        <!-- Canvas hidden, we use CSS for 3D logic -->
+        <canvas id="output_canvas" style="display:none"></canvas> 
+    </div>
+
+    <!-- 3D Environment -->
+    <div class="scene">
+        <div class="center-dot"></div>
+        <div class="cube-wrapper" id="cube_control">
+            <div class="cube">
+                <div class="face front">FRONT</div>
+                <div class="face back">BACK</div>
+                <div class="face right">RIGHT</div>
+                <div class="face left">LEFT</div>
+                <div class="face top">TOP</div>
+                <div class="face bottom">BOTTOM</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const cubeWrapper = document.getElementById('cube_control');
+        const statusText = document.getElementById('status_text');
+        
+        // Smoothing variables to prevent jitter
+        let currentX = 0, currentY = 0;
+        let currentRotateX = 0, currentRotateY = 0, currentRotateZ = 0;
+        const smoothFactor = 0.2; // Lower = smoother but slower, Higher = more responsive
+
+        function onResults(results) {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                statusText.innerText = "Tracking Active";
+                statusText.style.color = "#00ffcc";
+
+                const landmarks = results.multiFaceLandmarks[0];
+
+                // --- 1. Position Calculation ---
+                // Nose Tip is Index 1
+                const nose = landmarks[1];
+                
+                // Convert normalized coordinates (0-1) to screen movement range
+                // We invert X because the video is mirrored
+                // Range: -500px to 500px roughly
+                const targetX = (0.5 - nose.x) * window.innerWidth * 1.5; 
+                const targetY = (nose.y - 0.5) * window.innerHeight * 1.5;
+
+                // --- 2. Rotation Calculation (Approximate) ---
+                // PITCH (Up/Down): Compare Nose Y vs Eyes Y
+                // Y-axis: Top is 0, Bottom is 1. 
+                // If nose is much lower than eyes, looking down.
+                const topHead = landmarks[10];
+                const bottomHead = landmarks[152];
+                const faceVerticalHeight = bottomHead.y - topHead.y;
+                // Normalize pitch roughly
+                const targetRotateX = (nose.y - 0.5) * 90; // Approx tilt up/down
+
+                // YAW (Left/Right): Compare Nose X vs Face Center X
+                // Left Cheek: 234, Right Cheek: 454
+                const leftCheek = landmarks[234];
+                const rightCheek = landmarks[454];
+                const midPointX = (leftCheek.x + rightCheek.x) / 2;
+                // If nose.x < midPointX (remember mirror), head turned.
+                // Multiplier 200 makes the rotation more sensitive
+                const targetRotateY = (midPointX - nose.x) * 200; 
+
+                // ROLL (Tilt Head Side to Side): 
+                // Angle between Left Eye (33) and Right Eye (263)
+                const leftEye = landmarks[33];
+                const rightEye = landmarks[263];
+                // Calculate angle
+                const dx = rightEye.x - leftEye.x;
+                const dy = rightEye.y - leftEye.y;
+                const targetRotateZ = Math.atan2(dy, dx) * (180 / Math.PI); 
+
+                // --- 3. Smoothing (Linear Interpolation) ---
+                currentX += (targetX - currentX) * smoothFactor;
+                currentY += (targetY - currentY) * smoothFactor;
+                currentRotateX += (targetRotateX - currentRotateX) * smoothFactor;
+                currentRotateY += (targetRotateY - currentRotateY) * smoothFactor;
+                currentRotateZ += (targetRotateZ - currentRotateZ) * smoothFactor;
+
+                // --- 4. Apply CSS Transform ---
+                // translateZ moves it closer/further (optional, could map to face size)
+                cubeWrapper.style.transform = `
+                    translate3d(${currentX}px, ${currentY}px, -100px) 
+                    rotateX(${-currentRotateX}deg) 
+                    rotateY(${-currentRotateY}deg) 
+                    rotateZ(${-currentRotateZ}deg)
+                `;
+
+            } else {
+                statusText.innerText = "Face not detected";
+                statusText.style.color = "#ff4d4d";
+            }
+        }
+
+        // Initialize FaceMesh
+        const faceMesh = new FaceMesh({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+        }});
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true, // Better accuracy for eyes/lips
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onResults);
+
+        // Setup Camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start()
+            .then(() => {
+                console.log("Camera started");
+            })
+            .catch(err => {
+                console.error("Camera failed", err);
+                statusText.innerText = "Camera Access Denied";
+                statusText.style.color = "red";
+            });
+
+    </script>
+</body>
+</html>
