@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SocialConnect</title>
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* --- CSS VARIABLES & THEMES --- */
+        :root {
+            --primary: #1877F2;
+            --secondary: #42b72a;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-main: #050505;
+            --text-light: #65676b;
+            --border: #dddfe2;
+            --shadow: 0 1px 2px rgba(0,0,0,0.1);
+            --danger: #ff4d4d;
+            --nav-height: 60px;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #18191a;
+            --card-bg: #242526;
+            --text-main: #e4e6eb;
+            --text-light: #b0b3b8;
+            --border: #3e4042;
+            --shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* --- GLOBAL RESET --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); transition: background 0.3s; padding-bottom: 70px; overflow-x: hidden; }
+        
+        /* --- UTILITIES --- */
+        .hidden { display: none !important; }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; transition: 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-secondary { background: var(--secondary); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        input, textarea, select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text-main); margin-bottom: 10px; }
+        
+        /* --- LOADERS --- */
+        #global-loader { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-color); z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- AUTH SCREEN --- */
+        #auth-container { max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
+        .auth-card { background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: var(--shadow); }
+        .logo { font-size: 2rem; color: var(--primary); font-weight: bold; margin-bottom: 20px; display: block; }
+        
+        /* --- APP LAYOUT --- */
+        nav.top-nav { position: sticky; top: 0; background: var(--card-bg); padding: 10px 20px; box-shadow: var(--shadow); z-index: 100; display: flex; justify-content: space-between; align-items: center; height: var(--nav-height); }
+        nav.bottom-nav { position: fixed; bottom: 0; width: 100%; background: var(--card-bg); border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 10px 0; z-index: 100; }
+        .nav-item { font-size: 1.5rem; color: var(--text-light); cursor: pointer; position: relative; }
+        .nav-item.active { color: var(--primary); }
+        .nav-badge { position: absolute; top: -5px; right: -5px; background: var(--danger); color: white; font-size: 10px; padding: 2px 5px; border-radius: 50%; }
+
+        /* --- MAIN CONTENT AREAS --- */
+        .container { max-width: 600px; margin: 20px auto; padding: 0 10px; }
+        
+        /* POST CARD */
+        .card { background: var(--card-bg); border-radius: 8px; box-shadow: var(--shadow); margin-bottom: 15px; overflow: hidden; }
+        .card-header { padding: 12px; display: flex; align-items: center; }
+        .user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-right: 10px; border: 1px solid var(--border); }
+        .user-info h4 { font-size: 14px; margin: 0; }
+        .user-info span { font-size: 12px; color: var(--text-light); }
+        .card-img { width: 100%; height: auto; display: block; max-height: 500px; object-fit: cover; }
+        .card-body { padding: 12px; }
+        .card-actions { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; gap: 15px; }
+        .action-btn { background: none; border: none; color: var(--text-light); cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: 600; }
+        .action-btn:hover { color: var(--text-main); }
+        
+        /* CREATE POST */
+        .create-post-box { background: var(--card-bg); padding: 15px; border-radius: 8px; box-shadow: var(--shadow); margin-bottom: 20px; display: flex; gap: 10px; }
+        .cp-input { flex: 1; background: var(--bg-color); border-radius: 20px; padding: 10px 15px; cursor: pointer; color: var(--text-light); }
+
+        /* CHAT SYSTEM */
+        #chat-view { height: calc(100vh - 120px); display: flex; flex-direction: column; }
+        .chat-list-item { padding: 15px; border-bottom: 1px solid var(--border); display: flex; align-items: center; cursor: pointer; background: var(--card-bg); }
+        .chat-list-item:hover { background: var(--bg-color); }
+        .online-dot { width: 10px; height: 10px; background: #ccc; border-radius: 50%; margin-left: auto; }
+        .online-dot.active { background: var(--secondary); }
+        
+        .chat-window { display: flex; flex-direction: column; height: 100%; background: var(--bg-color); }
+        .chat-header { padding: 10px; background: var(--card-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 70%; padding: 8px 12px; border-radius: 15px; font-size: 14px; word-wrap: break-word; }
+        .msg-sent { align-self: flex-end; background: var(--primary); color: white; }
+        .msg-received { align-self: flex-start; background: var(--card-bg); border: 1px solid var(--border); }
+        .chat-input-area { padding: 10px; background: var(--card-bg); display: flex; gap: 10px; }
+
+        /* MODALS */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        .modal.open { opacity: 1; pointer-events: auto; }
+        .modal-content { background: var(--card-bg); width: 90%; max-width: 500px; padding: 20px; border-radius: 8px; position: relative; max-height: 90vh; overflow-y: auto; }
+        .close-modal { position: absolute; top: 10px; right: 15px; font-size: 24px; cursor: pointer; }
+
+        /* PROFILE SETUP */
+        .file-upload-wrapper { position: relative; width: 100px; height: 100px; margin: 0 auto 15px; }
+        .profile-preview { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); }
+        .upload-icon { position: absolute; bottom: 0; right: 0; background: var(--card-bg); padding: 5px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; }
+        
+        /* TOAST */
+        #toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 14px; opacity: 0; transition: 0.3s; pointer-events: none; z-index: 2000; }
+        #toast.show { opacity: 1; bottom: 90px; }
+    </style>
+</head>
+<body>
+
+    <!-- GLOBAL LOADER -->
+    <div id="global-loader">
+        <div class="logo">SocialConnect</div>
+        <div class="spinner"></div>
+        <p style="margin-top:10px; color:var(--text-light)">Loading App...</p>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast">Notification</div>
+
+    <!-- AUTH SECTION -->
+    <div id="auth-section" class="container hidden">
+        <div class="auth-card">
+            <span class="logo" id="auth-logo-text">SocialConnect</span>
+            <div id="login-form">
+                <h3>Log In</h3>
+                <input type="email" id="login-email" placeholder="Email">
+                <input type="password" id="login-pass" placeholder="Password">
+                <button class="btn btn-primary" style="width:100%" onclick="loginEmail()">Log In</button>
+                <button class="btn btn-secondary" style="width:100%; margin-top:10px" onclick="loginGoogle()"><i class="fab fa-google"></i> Login with Google</button>
+                <p style="margin-top:10px; font-size:13px">Don't have an account? <a href="#" onclick="toggleAuth('signup')">Sign Up</a></p>
+            </div>
+            <div id="signup-form" class="hidden">
+                <h3>Sign Up</h3>
+                <input type="email" id="signup-email" placeholder="Email">
+                <input type="password" id="signup-pass" placeholder="Password">
+                <button class="btn btn-secondary" style="width:100%" onclick="signupEmail()">Sign Up</button>
+                <p style="margin-top:10px; font-size:13px">Already have an account? <a href="#" onclick="toggleAuth('login')">Log In</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROFILE SETUP SECTION -->
+    <div id="setup-section" class="container hidden">
+        <div class="auth-card">
+            <h3>Complete Profile</h3>
+            <p style="color:var(--text-light); font-size:13px; margin-bottom:15px">Setup your identity to continue.</p>
+            
+            <div class="file-upload-wrapper">
+                <img src="https://i.ibb.co/5Y12sd6/default-avatar.png" id="setup-dp-preview" class="profile-preview">
+                <label for="setup-dp-input" class="upload-icon"><i class="fas fa-camera"></i></label>
+                <input type="file" id="setup-dp-input" accept="image/*" hidden onchange="handlePreview(this, 'setup-dp-preview')">
+            </div>
+
+            <input type="text" id="setup-username" placeholder="Username (Unique)" oninput="this.value = this.value.toLowerCase().replace(/[^a-z0-9_]/g, '')">
+            <input type="text" id="setup-displayname" placeholder="Display Name">
+            
+            <button class="btn btn-primary" id="setup-btn" style="width:100%" onclick="completeSetup()">Save & Continue</button>
+        </div>
+    </div>
+
+    <!-- MAIN APP SECTION -->
+    <div id="app-section" class="hidden">
+        <!-- TOP NAV -->
+        <nav class="top-nav">
+            <span class="logo" style="font-size: 1.5rem;" id="app-header-name">SocialConnect</span>
+            <div>
+                <i class="fas fa-moon" id="theme-toggle" onclick="toggleTheme()" style="font-size:1.2rem; cursor:pointer; margin-right:15px"></i>
+                <i class="fas fa-sign-out-alt" onclick="logout()" style="font-size:1.2rem; cursor:pointer; color:var(--danger)"></i>
+            </div>
+        </nav>
+
+        <!-- CONTENT CONTAINER -->
+        <div id="main-content" class="container">
+            <!-- DYNAMIC CONTENT GOES HERE -->
+        </div>
+
+        <!-- BOTTOM NAV -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="navTo('feed')"><i class="fas fa-home"></i></div>
+            <div class="nav-item" onclick="navTo('search')"><i class="fas fa-search"></i></div>
+            <div class="nav-item" onclick="navTo('create')"><i class="fas fa-plus-circle" style="color:var(--primary); font-size: 2rem; transform: translateY(-5px);"></i></div>
+            <div class="nav-item" onclick="navTo('chat')">
+                <i class="fas fa-comment-dots"></i>
+                <div id="chat-badge" class="nav-badge hidden">0</div>
+            </div>
+            <div class="nav-item" onclick="navTo('profile')"><i class="fas fa-user"></i></div>
+        </nav>
+    </div>
+
+    <!-- CREATE POST MODAL -->
+    <div id="create-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('create-modal')">&times;</span>
+            <h3>Create Post</h3>
+            <textarea id="post-caption" rows="3" placeholder="What's on your mind?"></textarea>
+            <div style="border: 2px dashed var(--border); padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 15px;">
+                <img id="post-img-preview" src="" style="max-width:100%; max-height:200px; display:none; margin-bottom:10px; border-radius:6px;">
+                <br>
+                <label for="post-img-input" class="btn btn-secondary"><i class="fas fa-image"></i> Select Image</label>
+                <input type="file" id="post-img-input" accept="image/*" hidden onchange="handlePreview(this, 'post-img-preview', true)">
+            </div>
+            <button class="btn btn-primary" style="width:100%" id="btn-publish" onclick="publishPost()">Post</button>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT -->
+    <script type="module">
+        // --- FIREBASE IMPORT ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+        import { getDatabase, ref, set, get, push, onValue, update, remove, child, serverTimestamp, query, orderByChild, equalTo, onDisconnect } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+        // CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7csSkAFgTlWTPCvEXCPUfc1AA50HHz1c",
+            authDomain: "ritam-2d2df.firebaseapp.com",
+            databaseURL: "https://ritam-2d2df-default-rtdb.firebaseio.com",
+            projectId: "ritam-2d2df",
+            storageBucket: "ritam-2d2df.firebasestorage.app",
+            messagingSenderId: "754157553570",
+            appId: "1:754157553570:web:8f0b6fd43b663e06bfd4fb",
+            measurementId: "G-896R413P6P"
+        };
+
+        const IMGBB_API_KEY = "d6ae34a680665aa763e32a5be8fa083a";
+
+        // INIT
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+        const provider = new GoogleAuthProvider();
+
+        let currentUser = null;
+        let currentUserData = null;
+
+        // --- DOM HELPERS ---
+        window.toggleAuth = (mode) => {
+            if(mode === 'signup') {
+                document.getElementById('login-form').classList.add('hidden');
+                document.getElementById('signup-form').classList.remove('hidden');
+            } else {
+                document.getElementById('signup-form').classList.add('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+            }
+        };
+
+        window.handlePreview = (input, imgId, showBlock = false) => {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = document.getElementById(imgId);
+                    img.src = e.target.result;
+                    img.style.display = showBlock ? 'block' : 'inline';
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        };
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        async function uploadToImgBB(file) {
+            const formData = new FormData();
+            formData.append("image", file);
+            
+            try {
+                const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.success) return data.data.url;
+                throw new Error("Image upload failed");
+            } catch (err) {
+                console.error(err);
+                showToast("Image upload failed");
+                return null;
+            }
+        }
+
+        // --- AUTHENTICATION LOGIC ---
+        window.loginGoogle = () => {
+            signInWithPopup(auth, provider).catch(e => showToast(e.message));
+        };
+
+        window.loginEmail = () => {
+            const e = document.getElementById('login-email').value;
+            const p = document.getElementById('login-pass').value;
+            if(!e || !p) return showToast("Enter email & password");
+            signInWithEmailAndPassword(auth, e, p).catch(e => showToast(e.message));
+        };
+
+        window.signupEmail = () => {
+            const e = document.getElementById('signup-email').value;
+            const p = document.getElementById('signup-pass').value;
+            if(!e || !p) return showToast("Enter email & password");
+            createUserWithEmailAndPassword(auth, e, p).catch(e => showToast(e.message));
+        };
+
+        window.logout = () => {
+            if(currentUser) {
+                // Set offline before signing out
+                set(ref(db, `users/${currentUser.uid}/onlineStatus`), 'offline');
+            }
+            signOut(auth);
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+            const loader = document.getElementById('global-loader');
+            if (user) {
+                currentUser = user;
+                // Check if profile exists
+                const snap = await get(ref(db, `users/${user.uid}`));
+                if (snap.exists()) {
+                    currentUserData = snap.val();
+                    initApp();
+                } else {
+                    loader.style.display = 'none';
+                    document.getElementById('auth-section').classList.add('hidden');
+                    document.getElementById('setup-section').classList.remove('hidden');
+                }
+                
+                // Set Online Status
+                const connectedRef = ref(db, ".info/connected");
+                onValue(connectedRef, (snap) => {
+                    if (snap.val() === true) {
+                        const statusRef = ref(db, `users/${user.uid}/onlineStatus`);
+                        onDisconnect(statusRef).set("offline");
+                        set(statusRef, "online");
+                    }
+                });
+
+            } else {
+                currentUser = null;
+                currentUserData = null;
+                loader.style.display = 'none';
+                document.getElementById('app-section').classList.add('hidden');
+                document.getElementById('auth-section').classList.remove('hidden');
+                document.getElementById('setup-section').classList.add('hidden');
+            }
+        });
+
+        // --- PROFILE SETUP ---
+        window.completeSetup = async () => {
+            const username = document.getElementById('setup-username').value;
+            const displayName = document.getElementById('setup-displayname').value;
+            const fileInput = document.getElementById('setup-dp-input');
+
+            if(!username || !displayName) return showToast("All fields required");
+
+            const btn = document.getElementById('setup-btn');
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+
+            // Check Username uniqueness
+            const uSnap = await get(ref(db, `usernames/${username}`));
+            if(uSnap.exists()) {
+                btn.disabled = false;
+                btn.innerText = "Save & Continue";
+                return showToast("Username already taken!");
+            }
+
+            let dpUrl = "https://i.ibb.co/5Y12sd6/default-avatar.png";
+            if(fileInput.files[0]) {
+                const url = await uploadToImgBB(fileInput.files[0]);
+                if(url) dpUrl = url;
+            }
+
+            const userData = {
+                uid: currentUser.uid,
+                username: username,
+                displayName: displayName,
+                photoURL: dpUrl,
+                email: currentUser.email,
+                joined: serverTimestamp(),
+                onlineStatus: 'online',
+                theme: 'light'
+            };
+
+            await set(ref(db, `users/${currentUser.uid}`), userData);
+            await set(ref(db, `usernames/${username}`), currentUser.uid);
+
+            currentUserData = userData;
+            btn.disabled = false;
+            document.getElementById('setup-section').classList.add('hidden');
+            initApp();
+        };
+
+        // --- MAIN APP LOGIC ---
+        function initApp() {
+            document.getElementById('global-loader').style.display = 'none';
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('app-section').classList.remove('hidden');
+            
+            // Listen for App Name changes
+            onValue(ref(db, 'appSettings/appName'), (snap) => {
+                const name = snap.val() || "SocialConnect";
+                document.getElementById('app-header-name').innerText = name;
+                document.title = name;
+                document.getElementById('auth-logo-text').innerText = name;
+            });
+
+            // Listen for Theme
+            onValue(ref(db, `users/${currentUser.uid}/theme`), (snap) => {
+                const theme = snap.val() || 'light';
+                document.documentElement.setAttribute('data-theme', theme);
+            });
+
+            navTo('feed');
+        }
+
+        window.toggleTheme = () => {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = current === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            update(ref(db, `users/${currentUser.uid}`), { theme: newTheme });
+        };
+
+        // NAVIGATION
+        window.navTo = (view) => {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // Highlight logic approx
+            const icons = { feed:0, search:1, create:2, chat:3, profile:4 };
+            if(icons[view] !== undefined) document.querySelectorAll('.nav-item')[icons[view]].classList.add('active');
+
+            const content = document.getElementById('main-content');
+            content.innerHTML = ''; // Clear current view
+
+            if(view === 'create') {
+                document.getElementById('create-modal').classList.add('open');
+                return; // Don't change background view
+            }
+            if(view === 'feed') renderFeed();
+            if(view === 'search') renderSearch();
+            if(view === 'chat') renderChatList();
+            if(view === 'profile') renderProfile(currentUser.uid);
+        };
+
+        window.closeModal = (id) => document.getElementById(id).classList.remove('open');
+
+        // --- FEED SYSTEM ---
+        function renderFeed() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<div class="create-post-box">
+                <img src="${currentUserData.photoURL}" class="user-avatar">
+                <div class="cp-input" onclick="navTo('create')">What's on your mind, ${currentUserData.displayName}?</div>
+            </div><div id="feed-stream"></div>`;
+            
+            const feedRef = query(ref(db, 'posts'), orderByChild('timestamp'));
+            onValue(feedRef, (snapshot) => {
+                const feedStream = document.getElementById('feed-stream');
+                if(!feedStream) return;
+                feedStream.innerHTML = "";
+                const posts = [];
+                snapshot.forEach(childSnapshot => {
+                    posts.push({id: childSnapshot.key, ...childSnapshot.val()});
+                });
+                
+                posts.reverse().forEach(post => {
+                    const card = document.createElement('div');
+                    card.className = "card";
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <img src="${post.userPhoto}" class="user-avatar">
+                            <div class="user-info">
+                                <h4>${post.displayName}</h4>
+                                <span>@${post.username}</span>
+                            </div>
+                            <i class="fas fa-ellipsis-h" style="margin-left:auto; color:var(--text-light); cursor:pointer;" onclick="reportItem('post', '${post.id}')"></i>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom:10px">${post.caption || ''}</p>
+                        </div>
+                        <img src="${post.imageURL}" class="card-img" ondblclick="likePost('${post.id}')">
+                        <div class="card-actions">
+                            <button class="action-btn" onclick="likePost('${post.id}')"><i class="far fa-heart"></i> Like</button>
+                            <button class="action-btn" onclick="toggleComments('${post.id}')"><i class="far fa-comment"></i> Comment</button>
+                        </div>
+                        <div id="comments-${post.id}" class="hidden" style="padding:10px; background:var(--bg-color)">
+                            <div id="comment-list-${post.id}" style="margin-bottom:10px"></div>
+                            <div style="display:flex; gap:5px">
+                                <input type="text" id="input-comment-${post.id}" placeholder="Write a comment..." style="margin:0; border-radius:20px">
+                                <button class="btn btn-primary" onclick="postComment('${post.id}')" style="border-radius:20px; padding:8px 15px"><i class="fas fa-paper-plane"></i></button>
+                            </div>
+                        </div>
+                    `;
+                    feedStream.appendChild(card);
+                });
+            });
+        }
+
+        window.publishPost = async () => {
+            const caption = document.getElementById('post-caption').value;
+            const fileInput = document.getElementById('post-img-input');
+            
+            if(!fileInput.files[0]) return showToast("Image is required!");
+
+            const btn = document.getElementById('btn-publish');
+            btn.disabled = true; btn.innerText = "Uploading...";
+
+            const imgUrl = await uploadToImgBB(fileInput.files[0]);
+            if(!imgUrl) {
+                btn.disabled = false; btn.innerText = "Post";
+                return;
+            }
+
+            const postData = {
+                uid: currentUser.uid,
+                username: currentUserData.username,
+                displayName: currentUserData.displayName,
+                userPhoto: currentUserData.photoURL,
+                caption: caption,
+                imageURL: imgUrl,
+                timestamp: serverTimestamp(),
+                likes: 0
+            };
+
+            await push(ref(db, 'posts'), postData);
+            
+            closeModal('create-modal');
+            btn.disabled = false; btn.innerText = "Post";
+            document.getElementById('post-caption').value = "";
+            document.getElementById('post-img-input').value = "";
+            document.getElementById('post-img-preview').style.display = 'none';
+            showToast("Posted successfully!");
+            navTo('feed');
+        };
+
+        window.toggleComments = (postId) => {
+            const el = document.getElementById(`comments-${postId}`);
+            el.classList.toggle('hidden');
+            if(!el.classList.contains('hidden')) loadComments(postId);
+        };
+
+        window.postComment = (postId) => {
+            const input = document.getElementById(`input-comment-${postId}`);
+            if(!input.value) return;
+            push(ref(db, `comments/${postId}`), {
+                uid: currentUser.uid,
+                username: currentUserData.username,
+                text: input.value,
+                timestamp: serverTimestamp()
+            });
+            input.value = "";
+        };
+
+        function loadComments(postId) {
+            onValue(ref(db, `comments/${postId}`), (snap) => {
+                const list = document.getElementById(`comment-list-${postId}`);
+                if(!list) return;
+                list.innerHTML = "";
+                snap.forEach(c => {
+                    const val = c.val();
+                    list.innerHTML += `<div style="font-size:13px; margin-bottom:5px"><b>${val.username}:</b> ${val.text}</div>`;
+                });
+            });
+        }
+
+        // --- FRIEND & SEARCH SYSTEM ---
+        function renderSearch() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `
+                <div style="padding:10px">
+                    <input type="text" placeholder="Search Users by Username..." id="search-input" onkeyup="searchUsers(this.value)">
+                </div>
+                <div id="search-results"></div>
+            `;
+        }
+
+        window.searchUsers = async (queryStr) => {
+            if(queryStr.length < 3) return;
+            const resDiv = document.getElementById('search-results');
+            // Simple approach: get all users and filter client side (for small db) or query
+            // Using query for performance
+            const q = query(ref(db, 'users'), orderByChild('username'), equalTo(queryStr.toLowerCase()));
+            
+            // Note: Firebase simple query matches exact. For partial, we'd need a third party like Algolia or download list.
+            // Let's download a limited list or just match exact username for this prompt's constraints.
+            // PROMPT: "Search users by Username / User ID" -> Exact match is safer without external indexes.
+            
+            onValue(q, (snap) => {
+                resDiv.innerHTML = "";
+                if(!snap.exists()) {
+                    resDiv.innerHTML = "<p style='text-align:center;color:var(--text-light)'>No user found.</p>";
+                    return;
+                }
+                snap.forEach(child => {
+                    const u = child.val();
+                    if(u.uid === currentUser.uid) return;
+                    resDiv.innerHTML += `
+                        <div class="chat-list-item" onclick="viewUserProfile('${u.uid}')">
+                            <img src="${u.photoURL}" class="user-avatar">
+                            <div>
+                                <h4>${u.displayName}</h4>
+                                <span>@${u.username}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            }, { onlyOnce: true });
+        };
+
+        window.viewUserProfile = async (uid) => {
+            renderProfile(uid);
+        };
+
+        function renderProfile(uid) {
+            const isMe = uid === currentUser.uid;
+            const container = document.getElementById('main-content');
+            
+            get(ref(db, `users/${uid}`)).then(snap => {
+                const u = snap.val();
+                let actions = "";
+                if(!isMe) {
+                    actions = `<button class="btn btn-primary" onclick="sendFriendRequest('${uid}')">Add Friend</button>
+                               <button class="btn btn-secondary" onclick="startChat('${uid}')">Message</button>
+                               <button class="btn btn-danger" onclick="reportItem('user', '${uid}')">Report</button>`;
+                }
+
+                container.innerHTML = `
+                    <div style="text-align:center; padding:20px; background:var(--card-bg); margin-bottom:15px; border-radius:8px">
+                        <img src="${u.photoURL}" style="width:100px; height:100px; border-radius:50%; margin-bottom:10px; border:3px solid var(--primary)">
+                        <h2>${u.displayName}</h2>
+                        <p style="color:var(--text-light)">@${u.username}</p>
+                        <div style="margin-top:15px; display:flex; justify-content:center; gap:10px">${actions}</div>
+                    </div>
+                    <h3 style="padding:0 10px">Posts</h3>
+                    <div id="profile-posts"></div>
+                `;
+
+                // Load user posts
+                const q = query(ref(db, 'posts'), orderByChild('uid'), equalTo(uid));
+                onValue(q, (snap) => {
+                    const div = document.getElementById('profile-posts');
+                    if(!div) return;
+                    div.innerHTML = "";
+                    if(!snap.exists()) {
+                        div.innerHTML = "<p style='padding:10px'>No posts yet.</p>"; return;
+                    }
+                    snap.forEach(c => {
+                        const p = c.val();
+                        div.innerHTML += `<div class="card"><img src="${p.imageURL}" class="card-img" style="max-height:300px"></div>`;
+                    });
+                });
+            });
+        }
+
+        window.sendFriendRequest = (targetUid) => {
+            set(ref(db, `friendRequests/${targetUid}/${currentUser.uid}`), {
+                timestamp: serverTimestamp(),
+                from: currentUserData.username
+            }).then(() => showToast("Request Sent!"));
+        };
+
+        // --- CHAT SYSTEM ---
+        function renderChatList() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<h3 style="padding:10px">Friends</h3><div id="friends-list"></div>`;
+            
+            // In a real app, this should query the 'friends' node
+            // For this demo, let's assume we chat with people we added or who accepted.
+            // Implementing basic friend list fetch:
+            
+            // To simplify "Friends only chat", let's query all users but visually indicate logic.
+            // *Wait, the requirement says "Friend System".*
+            // Let's implement a simple Friends Node.
+            
+            get(ref(db, `friends/${currentUser.uid}`)).then(snap => {
+                const list = document.getElementById('friends-list');
+                if(!snap.exists()) {
+                    list.innerHTML = "<p style='padding:10px'>No friends yet. Search users to add.</p>";
+                    return;
+                }
+                snap.forEach(f => {
+                    const friendUid = f.key;
+                    get(ref(db, `users/${friendUid}`)).then(uSnap => {
+                        const u = uSnap.val();
+                        const isOnline = u.onlineStatus === 'online';
+                        list.innerHTML += `
+                            <div class="chat-list-item" onclick="startChat('${friendUid}')">
+                                <img src="${u.photoURL}" class="user-avatar">
+                                <div style="flex:1">
+                                    <h4>${u.displayName}</h4>
+                                    <span>${isOnline ? 'Online' : 'Offline'}</span>
+                                </div>
+                                <div class="online-dot ${isOnline ? 'active':''}"></div>
+                            </div>
+                        `;
+                    });
+                });
+            });
+        }
+
+        window.startChat = (targetUid) => {
+            // Check if blocked
+            get(ref(db, `users/${currentUser.uid}/blocked/${targetUid}`)).then(snap => {
+                if(snap.exists()) return showToast("You blocked this user.");
+                
+                // Determine Chat ID
+                const chatId = [currentUser.uid, targetUid].sort().join('_');
+                
+                const container = document.getElementById('main-content');
+                container.innerHTML = `
+                    <div id="chat-view">
+                        <div class="chat-header">
+                            <i class="fas fa-arrow-left" onclick="navTo('chat')" style="margin-right:10px; cursor:pointer"></i>
+                            <span id="chat-header-name">Chat</span>
+                            <i class="fas fa-ban" style="margin-left:auto; color:var(--danger); cursor:pointer" onclick="blockUser('${targetUid}')"></i>
+                        </div>
+                        <div class="chat-messages" id="msg-container"></div>
+                        <div class="chat-input-area">
+                            <input type="text" id="msg-input" placeholder="Type a message..." style="margin:0; border-radius:20px">
+                            <button class="btn btn-primary" onclick="sendMsg('${chatId}', '${targetUid}')" style="border-radius:50%; width:40px; height:40px; padding:0"><i class="fas fa-paper-plane"></i></button>
+                        </div>
+                    </div>
+                `;
+
+                // Set header name
+                get(ref(db, `users/${targetUid}/displayName`)).then(s => document.getElementById('chat-header-name').innerText = s.val());
+
+                // Listen messages
+                onValue(ref(db, `chats/${chatId}/messages`), (snap) => {
+                    const div = document.getElementById('msg-container');
+                    if(!div) return;
+                    div.innerHTML = "";
+                    snap.forEach(m => {
+                        const val = m.val();
+                        const cls = val.sender === currentUser.uid ? 'msg-sent' : 'msg-received';
+                        div.innerHTML += `<div class="message ${cls}">${val.text}</div>`;
+                    });
+                    div.scrollTop = div.scrollHeight;
+                });
+            });
+        };
+
+        window.sendMsg = (chatId, targetUid) => {
+            const input = document.getElementById('msg-input');
+            const txt = input.value;
+            if(!txt) return;
+
+            // Check if blocked by other
+            get(ref(db, `users/${targetUid}/blocked/${currentUser.uid}`)).then(snap => {
+                if(snap.exists()) {
+                    showToast("Cannot send message.");
+                } else {
+                    push(ref(db, `chats/${chatId}/messages`), {
+                        sender: currentUser.uid,
+                        text: txt,
+                        timestamp: serverTimestamp()
+                    });
+                    input.value = "";
+                }
+            });
+        };
+
+        window.blockUser = (uid) => {
+            set(ref(db, `users/${currentUser.uid}/blocked/${uid}`), true).then(() => {
+                showToast("User blocked");
+                navTo('feed');
+            });
+        };
+
+        // --- REPORT SYSTEM ---
+        window.reportItem = (type, targetId) => {
+            const reason = prompt("Enter reason for reporting:");
+            if(reason) {
+                push(ref(db, 'reports'), {
+                    type, targetId, reason, reporter: currentUser.uid, timestamp: serverTimestamp()
+                }).then(() => showToast("Report submitted"));
+            }
+        };
+
+    </script>
+</body>
+</html>
