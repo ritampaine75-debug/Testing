@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Object Detection</title>
+    
+    <!-- Load TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <!-- Load the COCO-SSD model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <style>
+        /* Basic Reset and Layout */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin: 10px 0;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+
+        /* Container for Video and Canvas Overlay */
+        .cam-view {
+            position: relative;
+            width: 95%;
+            max-width: 640px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            background-color: #000;
+        }
+
+        /* Make video responsive */
+        video {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        /* Canvas must overlap video exactly */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Controls Area */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 90%;
+        }
+
+        /* Status Text Styling */
+        #status {
+            font-size: 1rem;
+            color: #00ffcc;
+            font-weight: bold;
+            height: 20px;
+        }
+
+        /* Button Styling */
+        button {
+            padding: 12px 24px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: background 0.3s;
+            background-color: #2196F3;
+            color: white;
+            font-weight: bold;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        button.stop {
+            background-color: #f44336;
+        }
+
+        /* Mobile Adjustments */
+        @media (max-width: 600px) {
+            h1 { font-size: 1.2rem; }
+            button { font-size: 0.9rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🔍 AI Object Detector</h1>
+    
+    <div class="cam-view">
+        <!-- The video element displays the camera feed -->
+        <!-- playsinline is required for iOS to play video inline (not full screen) -->
+        <video id="webcam" playsinline muted autoplay></video>
+        <!-- The canvas element is used to draw bounding boxes over the video -->
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="controls">
+        <div id="status">Loading Model...</div>
+        <button id="toggleBtn" onclick="toggleCamera()" disabled>Enable Camera</button>
+    </div>
+
+    <script>
+        // DOM Elements
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('status');
+        const toggleBtn = document.getElementById('toggleBtn');
+
+        // State variables
+        let model = undefined;
+        let isDetecting = false;
+        let stream = null;
+
+        /**
+         * 1. Load the COCO-SSD Model
+         * This runs immediately when the page loads.
+         */
+        cocoSsd.load().then(loadedModel => {
+            model = loadedModel;
+            statusText.innerText = "Model Loaded. Ready.";
+            toggleBtn.innerText = "Start Camera";
+            toggleBtn.disabled = false;
+        });
+
+        /**
+         * 2. Toggle Camera Function
+         * Handles starting and stopping the camera stream.
+         */
+        async function toggleCamera() {
+            if (!isDetecting) {
+                // Start Camera
+                statusText.innerText = "Requesting Camera Access...";
+                try {
+                    // Request camera with preference for rear camera on mobile
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' },
+                        audio: false
+                    });
+                    
+                    video.srcObject = stream;
+                    
+                    // Wait for video to load metadata to get dimensions
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        
+                        // Set canvas dimensions to match video logic
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        
+                        isDetecting = true;
+                        toggleBtn.innerText = "Stop Camera";
+                        toggleBtn.classList.add('stop');
+                        statusText.innerText = "Detecting Objects...";
+                        
+                        // Start the detection loop
+                        predictFrame();
+                    };
+                } catch (error) {
+                    console.error(error);
+                    statusText.innerText = "Error accessing camera.";
+                    alert("Please allow camera permission to use this app.");
+                }
+            } else {
+                // Stop Camera
+                isDetecting = false;
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                video.srcObject = null;
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear drawings
+                toggleBtn.innerText = "Start Camera";
+                toggleBtn.classList.remove('stop');
+                statusText.innerText = "Camera Stopped.";
+            }
+        }
+
+        /**
+         * 3. Prediction Loop
+         * Runs recursively using requestAnimationFrame to process video frames.
+         */
+        async function predictFrame() {
+            if (!isDetecting) return;
+
+            // Detect objects in the current video frame
+            // model.detect() returns an array of objects
+            const predictions = await model.detect(video);
+
+            // Clear the previous frame's drawings
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw new bounding boxes
+            predictions.forEach(prediction => {
+                // Filter results with low confidence (optional, default is usually 0.5)
+                if(prediction.score > 0.6) {
+                    drawBoundingBox(prediction);
+                }
+            });
+
+            // Loop again
+            requestAnimationFrame(predictFrame);
+        }
+
+        /**
+         * 4. Drawing Utility
+         * Draws the box and label on the canvas.
+         */
+        function drawBoundingBox(prediction) {
+            const [x, y, width, height] = prediction.bbox;
+            const text = prediction.class.toUpperCase();
+            const score = Math.round(prediction.score * 100) + '%';
+
+            // 1. Draw Box
+            ctx.strokeStyle = '#00FFFF'; // Cyan color
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.rect(x, y, width, height);
+            ctx.stroke();
+
+            // 2. Draw Label Background
+            ctx.fillStyle = '#00FFFF';
+            ctx.font = '18px Arial';
+            const textWidth = ctx.measureText(text + " - " + score).width;
+            ctx.fillRect(x, y > 20 ? y - 25 : y, textWidth + 10, 25);
+
+            // 3. Draw Text
+            ctx.fillStyle = '#000000';
+            ctx.fillText(text + " - " + score, x + 5, y > 20 ? y - 7 : y + 18);
+        }
+    </script>
+</body>
+</html>
