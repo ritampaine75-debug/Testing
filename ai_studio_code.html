@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Vision Tracker</title>
+    
+    <!-- Load TensorFlow.js and COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #00ff9d;
+            --bg-overlay: rgba(0, 0, 0, 0.6);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Container for video and canvas */
+        #camera-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none; /* Let clicks pass through */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .top-bar {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+        }
+
+        .stat-box {
+            background: var(--bg-overlay);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .stat-value {
+            color: var(--primary-color);
+            margin-left: 5px;
+        }
+
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #111;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            transition: opacity 0.5s;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255,255,255,0.1);
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .log-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <h3 id="status-text">Initializing AI Core...</h3>
+        <div class="log-text">This may take a moment on first load</div>
+    </div>
+
+    <!-- Main App -->
+    <div id="camera-container">
+        <video id="video" playsinline muted></video>
+        <canvas id="output"></canvas>
+        
+        <div id="ui-layer">
+            <div class="top-bar">
+                <div class="stat-box">FPS: <span id="fps" class="stat-value">0</span></div>
+                <div class="stat-box">Objects: <span id="obj-count" class="stat-value">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const CONFIDENCE_THRESHOLD = 0.60;
+        const IOU_THRESHOLD = 0.3; // Overlap required to match frames
+        const MAX_MISSING_FRAMES = 5; // How long to keep ID if object disappears temporarily
+        
+        // --- GLOBAL VARIABLES ---
+        let video, canvas, ctx, model;
+        let isModelLoaded = false;
+        let trackedObjects = []; // Stores { id, class, bbox, missingFrames, color }
+        let nextObjectId = 1;
+        let lastFrameTime = 0;
+
+        // --- TRACKING LOGIC (Centroid + Euclidean Distance) ---
+        class Tracker {
+            constructor() {
+                this.tracks = [];
+            }
+
+            update(detections) {
+                // 1. Prepare new centroids
+                const inputCentroids = detections.map(d => {
+                    return {
+                        id: null,
+                        bbox: d.bbox,
+                        class: d.class,
+                        score: d.score,
+                        cx: d.bbox[0] + d.bbox[2] / 2,
+                        cy: d.bbox[1] + d.bbox[3] / 2
+                    };
+                });
+
+                // 2. If no tracks exist, register all new detections
+                if (this.tracks.length === 0) {
+                    inputCentroids.forEach(input => {
+                        this.register(input);
+                    });
+                } else {
+                    // 3. Match existing tracks to new detections
+                    // Calculate distance matrix
+                    let objectIds = [];
+                    let inputIds = [];
+                    let dists = [];
+
+                    this.tracks.forEach((track, tIdx) => {
+                        inputCentroids.forEach((input, iIdx) => {
+                            const d = Math.hypot(track.cx - input.cx, track.cy - input.cy);
+                            dists.push({ tIdx, iIdx, d });
+                        });
+                    });
+
+                    // Sort by distance (closest first)
+                    dists.sort((a, b) => a.d - b.d);
+
+                    const usedRows = new Set();
+                    const usedCols = new Set();
+
+                    dists.forEach(item => {
+                        if (usedRows.has(item.tIdx) || usedCols.has(item.iIdx)) return;
+
+                        // Threshold check (if object moved too far, don't match)
+                        // Dynamic threshold based on object size usually helps, but fixed is faster
+                        if (item.d > 200) return; 
+
+                        // Update Track
+                        this.tracks[item.tIdx].cx = inputCentroids[item.iIdx].cx;
+                        this.tracks[item.tIdx].cy = inputCentroids[item.iIdx].cy;
+                        this.tracks[item.tIdx].bbox = inputCentroids[item.iIdx].bbox;
+                        this.tracks[item.tIdx].class = inputCentroids[item.iIdx].class; // Update class in case model refines it
+                        this.tracks[item.tIdx].score = inputCentroids[item.iIdx].score;
+                        this.tracks[item.tIdx].missingFrames = 0;
+
+                        usedRows.add(item.tIdx);
+                        usedCols.add(item.iIdx);
+                    });
+
+                    // 4. Handle Disappeared (Increase missing frames)
+                    this.tracks.forEach((track, idx) => {
+                        if (!usedRows.has(idx)) {
+                            track.missingFrames++;
+                        }
+                    });
+
+                    // 5. Register New Objects
+                    inputCentroids.forEach((input, idx) => {
+                        if (!usedCols.has(idx)) {
+                            this.register(input);
+                        }
+                    });
+                }
+
+                // 6. Prune dead tracks
+                this.tracks = this.tracks.filter(t => t.missingFrames < MAX_MISSING_FRAMES);
+                
+                return this.tracks;
+            }
+
+            register(input) {
+                const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                this.tracks.push({
+                    id: nextObjectId++,
+                    cx: input.cx,
+                    cy: input.cy,
+                    bbox: input.bbox,
+                    class: input.class,
+                    score: input.score,
+                    missingFrames: 0,
+                    color: color
+                });
+            }
+        }
+
+        const tracker = new Tracker();
+
+        // --- INITIALIZATION ---
+        async function init() {
+            video = document.getElementById('video');
+            canvas = document.getElementById('output');
+            ctx = canvas.getContext('2d');
+
+            try {
+                updateStatus("Accessing Camera...");
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: 'environment', // Rear camera
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                video.srcObject = stream;
+                
+                // Wait for video to load metadata to set canvas size
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve();
+                    };
+                });
+                
+                video.play();
+                resizeCanvas();
+
+                updateStatus("Loading AI Model...");
+                // Load COCO-SSD with WebGL backend
+                await tf.setBackend('webgl');
+                model = await cocoSsd.load();
+                
+                isModelLoaded = true;
+                document.getElementById('loading-screen').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loading-screen').style.display = 'none';
+                }, 500);
+
+                // Start loop
+                requestAnimationFrame(predictLoop);
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('status-text').innerText = "Error: " + err.message;
+                alert("Camera permission failed or HTTPS missing. Check settings.");
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        // --- DETECTION LOOP ---
+        async function predictLoop(timestamp) {
+            if (!isModelLoaded) return;
+
+            // Calculate FPS
+            const dt = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+            const fps = 1000 / dt;
+            document.getElementById('fps').innerText = fps.toFixed(0);
+
+            // Detect
+            const predictions = await model.detect(video, undefined, CONFIDENCE_THRESHOLD);
+
+            // Track
+            const activeTracks = tracker.update(predictions);
+            
+            // Draw
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('obj-count').innerText = activeTracks.length;
+
+            activeTracks.forEach(track => {
+                const [x, y, w, h] = track.bbox;
+                
+                // Draw Box
+                ctx.strokeStyle = track.color;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x, y, w, h);
+
+                // Draw Label Background
+                const text = `#${track.id} ${track.class} ${Math.round(track.score * 100)}%`;
+                ctx.font = 'bold 16px Arial';
+                const textWidth = ctx.measureText(text).width;
+                
+                ctx.fillStyle = track.color;
+                ctx.fillRect(x, y - 25, textWidth + 10, 25);
+
+                // Draw Text
+                ctx.fillStyle = '#000000';
+                ctx.fillText(text, x + 5, y - 7);
+            });
+
+            requestAnimationFrame(predictLoop);
+        }
+
+        function updateStatus(msg) {
+            document.getElementById('status-text').innerText = msg;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('load', init);
+
+    </script>
+</body>
+</html>
