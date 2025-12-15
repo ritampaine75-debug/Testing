@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Pose Detection</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        /* The video is hidden, we only show the canvas */
+        .input_video {
+            display: none;
+        }
+
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror effect for natural feel */
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: #ccc;
+            z-index: 10;
+        }
+    </style>
+
+    <!-- Import MediaPipe Pose and Drawing Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <h1>Pose / Skeleton Detection</h1>
+    <p>Stand back and make sure your full body is visible.</p>
+
+    <div class="container">
+        <div class="loading" id="loadingText">Loading Model...</div>
+        <video class="input_video"></video>
+        <canvas class="output_canvas" width="640" height="480"></canvas>
+    </div>
+
+    <script type="module">
+        const videoElement = document.getElementsByClassName('input_video')[0];
+        const canvasElement = document.getElementsByClassName('output_canvas')[0];
+        const canvasCtx = canvasElement.getContext('2d');
+        const loadingText = document.getElementById('loadingText');
+
+        function onResults(results) {
+            // Once we get results, hide the loading text
+            loadingText.style.display = 'none';
+
+            // 1. Prepare the canvas
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // 2. Draw the video frame
+            // We use 'source-over' to draw the image first
+            canvasCtx.globalCompositeOperation = 'source-over';
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            // 3. Draw the skeleton and landmarks
+            if (results.poseLandmarks) {
+                // Draw the connecting lines (skeleton)
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                               {color: '#00FF00', lineWidth: 4});
+                
+                // Draw the dots (joints)
+                drawLandmarks(canvasCtx, results.poseLandmarks,
+                              {color: '#FF0000', lineWidth: 2, radius: 4});
+            }
+            canvasCtx.restore();
+        }
+
+        // Initialize MediaPipe Pose
+        const pose = new Pose({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        }});
+
+        pose.setOptions({
+            modelComplexity: 1, // 0 = Fast, 1 = Medium, 2 = Accurate
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onResults);
+
+        // Initialize Camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+    </script>
+</body>
+</html>
