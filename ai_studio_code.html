@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PocketCut - Mobile Video Editor</title>
+    
+    <!-- FFmpeg WASM CDN -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --surface: #1e1e1e;
+            --primary: #00e5ff; /* Cyberpunk Cyan */
+            --text: #ffffff;
+            --text-dim: #888888;
+            --danger: #ff4444;
+            --safe-area-bottom: env(safe-area-inset-bottom);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- VIEWS --- */
+        .view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            background: var(--bg);
+            z-index: 10;
+        }
+        .view.active { display: flex; }
+
+        /* --- HOME (UPLOAD) --- */
+        #home-view {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+        .logo { font-size: 2rem; font-weight: 800; margin-bottom: 10px; color: var(--primary); letter-spacing: -1px; }
+        .upload-btn {
+            background: var(--surface);
+            border: 2px dashed var(--text-dim);
+            padding: 40px;
+            border-radius: 20px;
+            width: 100%;
+            max-width: 300px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .upload-btn:active { border-color: var(--primary); background: #252525; }
+        .upload-icon { font-size: 3rem; margin-bottom: 10px; display: block; }
+        input[type="file"] { display: none; }
+
+        /* --- EDITOR --- */
+        #editor-view { justify-content: space-between; }
+        
+        /* Top Bar */
+        .top-bar {
+            height: 60px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 15px;
+            background: var(--bg);
+            z-index: 20;
+        }
+        .btn-text { color: var(--text); font-weight: 600; padding: 10px; cursor: pointer; }
+        .btn-primary { color: var(--bg); background: var(--primary); padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; }
+
+        /* Preview Area */
+        .preview-container {
+            flex: 1;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background: #000;
+        }
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            transition: filter 0.2s, transform 0.2s;
+        }
+        
+        /* Text Overlay Layer */
+        #overlay-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* Let clicks pass to video unless hitting text */
+        }
+        .text-element {
+            position: absolute;
+            color: white;
+            font-weight: bold;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: auto;
+            cursor: grab;
+            padding: 5px;
+            border: 1px dashed transparent;
+        }
+        .text-element.selected { border-color: var(--primary); background: rgba(0,0,0,0.3); }
+
+        /* Toolbars */
+        .controls-area {
+            background: var(--surface);
+            padding-bottom: var(--safe-area-bottom);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+        }
+
+        /* Timeline (Simple Progress) */
+        .timeline-wrapper {
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .time-display { font-size: 0.8rem; font-variant-numeric: tabular-nums; width: 45px; }
+        input[type=range] {
+            flex: 1;
+            height: 4px;
+            background: var(--text-dim);
+            border-radius: 2px;
+            appearance: none;
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px; height: 16px;
+            background: var(--primary);
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+
+        /* Main Toolbar */
+        .main-tools {
+            display: flex;
+            overflow-x: auto;
+            padding: 10px 0;
+            scrollbar-width: none;
+        }
+        .main-tools::-webkit-scrollbar { display: none; }
+        .tool-btn {
+            flex: 0 0 auto;
+            width: 70px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+        .tool-btn.active { color: var(--primary); }
+        .tool-icon { font-size: 1.5rem; background: #2a2a2a; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+
+        /* Sub Menus (Hidden by default) */
+        .sub-menu {
+            display: none;
+            padding: 15px;
+            border-bottom: 1px solid #333;
+        }
+        .sub-menu.active { display: block; animation: slideUp 0.2s ease-out; }
+        
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Sliders in Submenu */
+        .slider-group { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .slider-label { width: 70px; font-size: 0.8rem; }
+
+        /* Filter Chips */
+        .filter-scroller { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; }
+        .filter-chip {
+            padding: 8px 16px;
+            background: #333;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .filter-chip.active { background: var(--primary); color: #000; font-weight: bold; }
+
+        /* Aspect Ratio Buttons */
+        .ratio-btn { width: 40px; height: 40px; border: 1px solid #555; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; border-radius: 5px; }
+        .ratio-btn.active { border-color: var(--primary); color: var(--primary); }
+
+        /* --- EXPORT --- */
+        #export-view { justify-content: center; align-items: center; padding: 30px; }
+        .progress-circle { width: 120px; height: 120px; border-radius: 50%; border: 8px solid #333; border-top-color: var(--primary); animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        .export-status { font-size: 1.1rem; margin-bottom: 10px; }
+        .export-details { color: var(--text-dim); font-size: 0.9rem; }
+        .download-btn { margin-top: 20px; display: none; }
+
+        /* Helper Classes */
+        .toast {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8); padding: 15px 25px; border-radius: 30px;
+            pointer-events: none; opacity: 0; transition: 0.3s; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HOME VIEW -->
+    <div id="home-view" class="view active">
+        <div class="logo">PocketCut</div>
+        <div style="color:var(--text-dim); margin-bottom:40px;">Mobile First Video Editor</div>
+        
+        <label class="upload-btn">
+            <span class="upload-icon">📹</span>
+            <span>Tap to Upload Video</span>
+            <input type="file" id="video-input" accept="video/mp4,video/mov,video/webm">
+        </label>
+        <p style="font-size: 0.8rem; color:#555; margin-top: 20px;">Processing happens locally on your device.</p>
+    </div>
+
+    <!-- EDITOR VIEW -->
+    <div id="editor-view" class="view">
+        <div class="top-bar">
+            <div class="btn-text" id="cancel-btn">✕</div>
+            <div id="loading-ffmpeg" style="font-size:0.7rem; color:var(--text-dim);">Loading Engine...</div>
+            <div class="btn-primary" id="export-btn">Export</div>
+        </div>
+
+        <div class="preview-container" id="preview-container">
+            <video id="main-video" playsinline loop></video>
+            <div id="overlay-layer"></div>
+        </div>
+
+        <div class="controls-area">
+            
+            <!-- Timeline -->
+            <div class="timeline-wrapper">
+                <div id="current-time" class="time-display">0:00</div>
+                <input type="range" id="seek-slider" value="0" min="0" max="100" step="0.1">
+                <div id="total-time" class="time-display">0:00</div>
+                <div class="btn-text" id="play-pause-btn" style="padding:0 10px;">▶</div>
+            </div>
+
+            <!-- Sub Menus -->
+            <div id="sub-trim" class="sub-menu">
+                <div class="slider-group">
+                    <span class="slider-label">Start</span>
+                    <input type="range" id="trim-start" value="0" min="0" max="100">
+                </div>
+                <div class="slider-group">
+                    <span class="slider-label">End</span>
+                    <input type="range" id="trim-end" value="100" min="0" max="100">
+                </div>
+                <div style="text-align:center; font-size:0.8rem; color:var(--text-dim);">Trims video on Export</div>
+            </div>
+
+            <div id="sub-adjust" class="sub-menu">
+                <div class="slider-group">
+                    <span class="slider-label">Bright</span>
+                    <input type="range" id="adj-brightness" min="0" max="200" value="100">
+                </div>
+                <div class="slider-group">
+                    <span class="slider-label">Contrast</span>
+                    <input type="range" id="adj-contrast" min="0" max="200" value="100">
+                </div>
+                <div class="slider-group">
+                    <span class="slider-label">Saturate</span>
+                    <input type="range" id="adj-saturation" min="0" max="200" value="100">
+                </div>
+            </div>
+
+            <div id="sub-filter" class="sub-menu">
+                <div class="filter-scroller" id="filter-list">
+                    <!-- JS Injected -->
+                </div>
+            </div>
+
+            <div id="sub-ratio" class="sub-menu">
+                <div class="filter-scroller" style="justify-content: space-around;">
+                    <div class="ratio-btn active" data-r="original">Orig</div>
+                    <div class="ratio-btn" data-r="9:16">9:16</div>
+                    <div class="ratio-btn" data-r="16:9">16:9</div>
+                    <div class="ratio-btn" data-r="1:1">1:1</div>
+                    <div class="ratio-btn" data-r="4:5">4:5</div>
+                </div>
+                <div style="text-align:center; font-size:0.8rem; margin-top:10px; color:var(--text-dim);">Tap 'Export' to apply resize</div>
+            </div>
+
+            <div id="sub-text" class="sub-menu">
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="text-input" placeholder="Enter text..." style="flex:1; padding:8px; border-radius:5px; border:none; background:#333; color:white;">
+                    <button class="btn-primary" id="add-text-btn">+</button>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:10px; justify-content:center;">
+                    <button class="btn-text" id="clear-text-btn" style="color:var(--danger)">Clear All</button>
+                </div>
+            </div>
+
+            <!-- Main Toolbar -->
+            <div class="main-tools">
+                <div class="tool-btn" onclick="ui.toggleSub('trim')">
+                    <div class="tool-icon">✂️</div>
+                    <span>Trim</span>
+                </div>
+                <div class="tool-btn" onclick="ui.toggleSub('adjust')">
+                    <div class="tool-icon">☀️</div>
+                    <span>Adjust</span>
+                </div>
+                <div class="tool-btn" onclick="ui.toggleSub('filter')">
+                    <div class="tool-icon">🎨</div>
+                    <span>Filters</span>
+                </div>
+                <div class="tool-btn" onclick="ui.toggleSub('text')">
+                    <div class="tool-icon">Aa</div>
+                    <span>Text</span>
+                </div>
+                <div class="tool-btn" onclick="ui.toggleSub('ratio')">
+                    <div class="tool-icon">📐</div>
+                    <span>Size</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPORT VIEW -->
+    <div id="export-view" class="view">
+        <div class="progress-circle" id="spinner"></div>
+        <div class="export-status" id="export-msg">Initializing...</div>
+        <div class="export-details" id="export-logs">Please wait, do not close browser.</div>
+        <button class="btn-primary download-btn" id="dl-btn">Download Video</button>
+        <div class="btn-text" id="back-edit-btn" style="margin-top:20px;">Cancel</div>
+    </div>
+
+    <div class="toast" id="toast">Message</div>
+
+    <script>
+        // --- APP STATE ---
+        const state = {
+            videoFile: null,
+            videoDuration: 0,
+            filters: {
+                brightness: 100,
+                contrast: 100,
+                saturation: 100,
+                preset: 'none'
+            },
+            trim: { start: 0, end: 100 }, // percentages
+            aspectRatio: 'original',
+            texts: [],
+            ffmpegLoaded: false
+        };
+
+        const dom = {
+            views: {
+                home: document.getElementById('home-view'),
+                editor: document.getElementById('editor-view'),
+                export: document.getElementById('export-view')
+            },
+            video: document.getElementById('main-video'),
+            fileInput: document.getElementById('video-input'),
+            sliders: {
+                seek: document.getElementById('seek-slider'),
+                trimStart: document.getElementById('trim-start'),
+                trimEnd: document.getElementById('trim-end'),
+                bright: document.getElementById('adj-brightness'),
+                cont: document.getElementById('adj-contrast'),
+                sat: document.getElementById('adj-saturation'),
+            },
+            time: {
+                cur: document.getElementById('current-time'),
+                tot: document.getElementById('total-time')
+            },
+            overlay: document.getElementById('overlay-layer'),
+            export: {
+                msg: document.getElementById('export-msg'),
+                logs: document.getElementById('export-logs'),
+                dl: document.getElementById('dl-btn'),
+                spinner: document.getElementById('spinner')
+            }
+        };
+
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        let ffmpeg = null;
+
+        // --- UI FUNCTIONS ---
+        const ui = {
+            showView: (viewName) => {
+                Object.values(dom.views).forEach(v => v.classList.remove('active'));
+                dom.views[viewName].classList.add('active');
+            },
+            
+            toast: (msg) => {
+                const t = document.getElementById('toast');
+                t.innerText = msg;
+                t.style.opacity = 1;
+                setTimeout(() => t.style.opacity = 0, 2000);
+            },
+
+            formatTime: (seconds) => {
+                const m = Math.floor(seconds / 60);
+                const s = Math.floor(seconds % 60);
+                return `${m}:${s < 10 ? '0' : ''}${s}`;
+            },
+
+            toggleSub: (id) => {
+                document.querySelectorAll('.sub-menu').forEach(el => {
+                    if (el.id === `sub-${id}` && el.style.display !== 'block') {
+                        el.style.display = 'block';
+                        el.classList.add('active');
+                    } else {
+                        el.style.display = 'none';
+                        el.classList.remove('active');
+                    }
+                });
+            },
+
+            applyVisualFilters: () => {
+                const { brightness, contrast, saturation, preset } = state.filters;
+                let filterString = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+                
+                // Simple preset logic for CSS
+                if (preset === 'grayscale') filterString += ' grayscale(100%)';
+                if (preset === 'sepia') filterString += ' sepia(100%)';
+                if (preset === 'warm') filterString += ' sepia(30%) hue-rotate(-10deg)';
+                if (preset === 'cool') filterString += ' hue-rotate(30deg) saturate(120%)';
+
+                dom.video.style.filter = filterString;
+            },
+
+            updateRatioPreview: () => {
+                const container = document.getElementById('preview-container');
+                dom.video.style.width = '100%';
+                dom.video.style.height = '100%';
+                dom.video.style.objectFit = 'contain';
+
+                if (state.aspectRatio === '9:16') {
+                   // In preview, we just simulate the crop visually by masking or changing object-fit
+                   // For simple mobile preview, object-fit cover approximates "zoom to fill"
+                   dom.video.style.objectFit = 'cover'; 
+                   dom.video.style.width = '56.25vh'; // Approx 9:16 relative to height
+                } else if (state.aspectRatio === '1:1') {
+                    dom.video.style.objectFit = 'cover';
+                    dom.video.style.width = '100vh'; // Square
+                    dom.video.style.maxHeight = '100vw'; // Square
+                }
+                // Note: True crop happens in FFmpeg. CSS is just approximation.
+            }
+        };
+
+        // --- INITIALIZATION ---
+        async function initFFmpeg() {
+            try {
+                ffmpeg = createFFmpeg({ log: true });
+                await ffmpeg.load();
+                state.ffmpegLoaded = true;
+                document.getElementById('loading-ffmpeg').innerText = "⚡ Engine Ready";
+                document.getElementById('loading-ffmpeg').style.color = "#00ff00";
+            } catch (e) {
+                console.error(e);
+                document.getElementById('loading-ffmpeg').innerText = "⚠️ Engine Error";
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initFFmpeg();
+
+            // Filters List
+            const presets = ['none', 'grayscale', 'sepia', 'warm', 'cool'];
+            const filterList = document.getElementById('filter-list');
+            presets.forEach(p => {
+                const d = document.createElement('div');
+                d.className = 'filter-chip';
+                d.innerText = p.charAt(0).toUpperCase() + p.slice(1);
+                d.onclick = () => {
+                    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+                    d.classList.add('active');
+                    state.filters.preset = p;
+                    ui.applyVisualFilters();
+                };
+                if(p === 'none') d.classList.add('active');
+                filterList.appendChild(d);
+            });
+
+            // Ratio Buttons
+            document.querySelectorAll('.ratio-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    state.aspectRatio = btn.dataset.r;
+                    ui.updateRatioPreview();
+                    ui.toast(`Ratio: ${btn.dataset.r}`);
+                });
+            });
+        });
+
+        // --- EVENT HANDLERS ---
+        
+        // 1. Upload
+        dom.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            state.videoFile = file;
+            dom.video.src = URL.createObjectURL(file);
+            dom.video.onloadedmetadata = () => {
+                state.videoDuration = dom.video.duration;
+                dom.time.tot.innerText = ui.formatTime(state.videoDuration);
+                dom.sliders.seek.max = state.videoDuration;
+                ui.showView('editor');
+            };
+        });
+
+        // 2. Playback
+        document.getElementById('play-pause-btn').addEventListener('click', () => {
+            if (dom.video.paused) {
+                dom.video.play();
+                document.getElementById('play-pause-btn').innerText = "⏸";
+            } else {
+                dom.video.pause();
+                document.getElementById('play-pause-btn').innerText = "▶";
+            }
+        });
+
+        dom.video.addEventListener('timeupdate', () => {
+            if (!dom.sliders.seek.matches(':active')) { // Don't update if user is dragging
+                dom.sliders.seek.value = dom.video.currentTime;
+            }
+            dom.time.cur.innerText = ui.formatTime(dom.video.currentTime);
+
+            // Loop based on trim
+            const endTime = (state.trim.end / 100) * state.videoDuration;
+            const startTime = (state.trim.start / 100) * state.videoDuration;
+            
+            if (dom.video.currentTime >= endTime) {
+                dom.video.currentTime = startTime;
+            }
+        });
+
+        dom.sliders.seek.addEventListener('input', (e) => {
+            dom.video.currentTime = e.target.value;
+        });
+
+        // 3. Adjustments
+        ['brightness', 'contrast', 'saturation'].forEach(type => {
+            const el = dom.sliders[type === 'brightness' ? 'bright' : type === 'contrast' ? 'cont' : 'sat'];
+            el.addEventListener('input', (e) => {
+                state.filters[type] = e.target.value;
+                ui.applyVisualFilters();
+            });
+        });
+
+        // 4. Trim Logic
+        dom.sliders.trimStart.addEventListener('input', (e) => {
+            if (parseInt(e.target.value) >= parseInt(dom.sliders.trimEnd.value)) {
+                e.target.value = dom.sliders.trimEnd.value - 1;
+            }
+            state.trim.start = e.target.value;
+            // Jump video to start
+            dom.video.currentTime = (state.trim.start / 100) * state.videoDuration;
+        });
+        dom.sliders.trimEnd.addEventListener('input', (e) => {
+            if (parseInt(e.target.value) <= parseInt(dom.sliders.trimStart.value)) {
+                e.target.value = parseInt(dom.sliders.trimStart.value) + 1;
+            }
+            state.trim.end = e.target.value;
+        });
+
+        // 5. Text Logic
+        document.getElementById('add-text-btn').addEventListener('click', () => {
+            const input = document.getElementById('text-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            const div = document.createElement('div');
+            div.className = 'text-element';
+            div.innerText = text;
+            div.style.left = '50%';
+            div.style.top = '50%';
+            div.style.transform = 'translate(-50%, -50%)'; // Center anchor
+            
+            // Drag Logic
+            let isDragging = false;
+            let startX, startY;
+
+            div.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                const touch = e.touches[0];
+                startX = touch.clientX - div.offsetLeft;
+                startY = touch.clientY - div.offsetTop;
+                div.classList.add('selected');
+            });
+
+            div.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                const touch = e.touches[0];
+                div.style.left = `${touch.clientX - startX}px`;
+                div.style.top = `${touch.clientY - startY}px`;
+                e.preventDefault();
+            });
+
+            div.addEventListener('touchend', () => {
+                isDragging = false;
+                div.classList.remove('selected');
+                updateTextState(div);
+            });
+
+            dom.overlay.appendChild(div);
+            state.texts.push({ id: Date.now(), el: div, text: text, x: 50, y: 50 }); // Init center
+            input.value = '';
+            ui.toast('Text added! Drag to move.');
+        });
+
+        document.getElementById('clear-text-btn').addEventListener('click', () => {
+            dom.overlay.innerHTML = '';
+            state.texts = [];
+        });
+
+        function updateTextState(el) {
+            // Calculate relative position % for FFmpeg
+            const rect = dom.video.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            
+            // This is rough estimation for the "one file" constraint
+            // In a real app, coordinate mapping between CSS and Video Resolution is complex
+            const x = (el.offsetLeft - rect.left) / rect.width;
+            const y = (el.offsetTop - rect.top) / rect.height;
+            
+            // Update the matching text object
+            // (Simplified: assuming last touched is okay or rebuilding list)
+        }
+
+        document.getElementById('cancel-btn').addEventListener('click', () => {
+            if(confirm('Discard changes?')) window.location.reload();
+        });
+
+        document.getElementById('back-edit-btn').addEventListener('click', () => {
+            ui.showView('editor');
+        });
+
+        // --- EXPORT LOGIC ---
+        document.getElementById('export-btn').addEventListener('click', async () => {
+            if (!state.ffmpegLoaded) {
+                alert("Processing Engine not ready yet. Please wait.");
+                return;
+            }
+
+            ui.showView('export');
+            dom.export.dl.style.display = 'none';
+            dom.export.spinner.style.borderTopColor = 'var(--primary)';
+            dom.export.spinner.style.animation = 'spin 1s linear infinite';
+            
+            const { name } = state.videoFile;
+            
+            try {
+                // 1. Write File
+                dom.export.msg.innerText = "Loading video...";
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(state.videoFile));
+
+                // 2. Build FFmpeg Filter Chain
+                let filters = [];
+                
+                // A. Trim
+                const startSec = (state.trim.start / 100) * state.videoDuration;
+                const duration = ((state.trim.end - state.trim.start) / 100) * state.videoDuration;
+
+                // B. Visual Adjustments (eq filter)
+                // Map 0-200 slider to -1.0 to 1.0 (approx) for brightness, 0-2 for contrast
+                const b = (state.filters.brightness - 100) / 100; 
+                const c = state.filters.contrast / 100;
+                const s = state.filters.saturation / 100;
+                
+                let vf = `eq=brightness=${b}:contrast=${c}:saturation=${s}`;
+
+                // C. Preset Filters (LUTs are hard in one file, using eq/hue approximations)
+                if (state.filters.preset === 'grayscale') vf += `,hue=s=0`;
+                if (state.filters.preset === 'sepia') vf += `,colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131`;
+                // Warm/Cool approximations
+                if (state.filters.preset === 'warm') vf += `,curves=r='0/0 0.5/0.58 1/1':b='0/0 0.5/0.42 1/1'`; 
+                if (state.filters.preset === 'cool') vf += `,curves=b='0/0 0.5/0.58 1/1':r='0/0 0.5/0.42 1/1'`;
+
+                // D. Scale / Crop (Shorts/Reels)
+                // Note: Complex cropping logic is omitted for brevity in single-file. 
+                // We will do a simple "scale to fit" or "crop to fill" based on user selection.
+                if (state.aspectRatio === '9:16') {
+                    // Crop to 9:16 (Centered)
+                    // crop=w=ih*(9/16):h=ih:x=(iw-ow)/2:y=0
+                    vf += `,crop=h=ih:w=ih*(9/16):x=(iw-ow)/2:y=0`;
+                } else if (state.aspectRatio === '1:1') {
+                     vf += `,crop=h=min(iw\\,ih):w=min(iw\\,ih):x=(iw-ow)/2:y=(ih-oh)/2`;
+                }
+
+                // NOTE: Text overlays in FFmpeg WASM require loading font files (.ttf) into the virtual FS.
+                // Since this is a single file without external assets, we cannot robustly render text via FFmpeg 
+                // without embedding a Base64 font (which is huge). 
+                // **Feature Limitation**: Text is Preview-Only in this lightweight single-file version.
+                // To enable it, we would need to fetch a font file from a URL like Google Fonts first.
+                
+                filters.push(vf);
+
+                // 3. Run Command
+                dom.export.msg.innerText = "Rendering...";
+                dom.export.logs.innerText = "This may take a minute on mobile devices...";
+
+                // Command construction
+                // -ss (start) -t (duration) -i input -vf filters -c:a copy output.mp4
+                // Note: -c:a copy might fail if trimming isn't on keyframes perfectly, but it's fastest. 
+                // Re-encoding audio (-c:a aac) is safer but slower.
+                
+                await ffmpeg.run(
+                    '-ss', `${startSec}`,
+                    '-t', `${duration}`,
+                    '-i', 'input.mp4',
+                    '-vf', filters.join(','),
+                    '-c:v', 'libx264', // Re-encode video
+                    '-preset', 'ultrafast', // Speed over size
+                    '-c:a', 'aac', // Re-encode audio
+                    'output.mp4'
+                );
+
+                // 4. Download
+                dom.export.msg.innerText = "Done!";
+                dom.export.logs.innerText = "Your video is ready.";
+                dom.export.spinner.style.animation = 'none';
+                dom.export.spinner.style.borderTopColor = '#00ff00';
+                dom.export.spinner.style.borderColor = '#00ff00';
+
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+                const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+                
+                dom.export.dl.href = url;
+                dom.export.dl.download = `pocketcut_${Date.now()}.mp4`;
+                dom.export.dl.style.display = 'block';
+                
+                // Cleanup
+                // ffmpeg.FS('unlink', 'input.mp4');
+                // ffmpeg.FS('unlink', 'output.mp4');
+
+            } catch (err) {
+                console.error(err);
+                dom.export.msg.innerText = "Error";
+                dom.export.logs.innerText = "Browser refused processing (Mem/Security).";
+                dom.export.spinner.style.borderColor = 'red';
+                dom.export.spinner.style.animation = 'none';
+            }
+        });
+
+    </script>
+</body>
+</html>
