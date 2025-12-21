@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamStudio - Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- REQUIRED FOR FIREBASE -->
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+      }
+    }
+    </script>
+
+    <style>
+        :root { --primary: #e50914; --bg: #121212; --panel: #1e1e1e; --text: #fff; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Sidebar */
+        .sidebar { width: 260px; background: #000; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        .brand { padding: 25px; font-size: 1.5rem; color: var(--primary); font-weight: 800; border-bottom: 1px solid #333; letter-spacing: 1px; }
+        .menu { flex: 1; padding: 10px; }
+        .menu-item { padding: 15px; margin-bottom: 5px; cursor: pointer; border-radius: 4px; color: #aaa; display: flex; align-items: center; gap: 15px; transition: 0.2s; }
+        .menu-item:hover, .menu-item.active { background: var(--panel); color: white; border-left: 4px solid var(--primary); }
+        .logout { padding: 20px; border-top: 1px solid #333; cursor: pointer; color: var(--primary); font-weight: bold; }
+
+        /* Main Content */
+        .main { flex: 1; padding: 30px; overflow-y: auto; }
+        h2 { border-bottom: 2px solid var(--primary); padding-bottom: 10px; margin-top: 0; font-weight: 300; text-transform: uppercase; }
+        
+        /* Forms & Tables */
+        .card { background: var(--panel); padding: 25px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #bbb; font-size: 0.9rem; }
+        input, select, textarea { width: 100%; padding: 12px; background: #2b2b2b; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+        input:focus { outline: none; border-color: var(--primary); }
+        
+        button { padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-green { background: #2ecc71; color: white; }
+        .btn-red { background: var(--primary); color: white; }
+        .btn-blue { background: #3498db; color: white; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #333; }
+        th { color: #888; font-size: 0.85rem; text-transform: uppercase; }
+        tr:hover { background: #252525; }
+        
+        /* Stats */
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .stat-box { background: var(--panel); padding: 30px; border-radius: 8px; text-align: center; border: 1px solid #333; }
+        .stat-num { font-size: 3rem; font-weight: bold; color: var(--primary); margin-bottom: 5px; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="brand">STUDIO ADMIN</div>
+        <div class="menu">
+            <div class="menu-item active" onclick="showTab('dash')"><i class="fas fa-chart-pie"></i> Dashboard</div>
+            <div class="menu-item" onclick="showTab('movies')"><i class="fas fa-film"></i> Movies</div>
+            <div class="menu-item" onclick="showTab('series')"><i class="fas fa-layer-group"></i> Series</div>
+            <div class="menu-item" onclick="showTab('livetv')"><i class="fas fa-broadcast-tower"></i> Live TV</div>
+            <div class="menu-item" onclick="showTab('users')"><i class="fas fa-users"></i> Users</div>
+            <div class="menu-item" onclick="showTab('comments')"><i class="fas fa-comments"></i> Moderation</div>
+            <div class="menu-item" onclick="showTab('polls')"><i class="fas fa-poll"></i> Polls</div>
+            <div class="menu-item" onclick="showTab('settings')"><i class="fas fa-cogs"></i> Settings</div>
+        </div>
+        <div class="logout" id="btn-logout"><i class="fas fa-sign-out-alt"></i> Logout</div>
+    </div>
+
+    <div class="main">
+        <!-- DASHBOARD -->
+        <div id="tab-dash">
+            <h2>Dashboard Overview</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-num" id="count-users">0</div>
+                    <div>Registered Users</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-num" id="count-movies">0</div>
+                    <div>Total Movies</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-num" id="status-server" style="color:#2ecc71"><i class="fas fa-check-circle"></i></div>
+                    <div>Server Status</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOVIES MANAGEMENT -->
+        <div id="tab-movies" class="hidden">
+            <h2>Manage Movies</h2>
+            <div class="card">
+                <h3><i class="fas fa-plus-circle"></i> Add New Movie</h3>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <input type="text" id="m-title" placeholder="Title" class="form-group">
+                    <input type="text" id="m-poster" placeholder="Poster Image URL" class="form-group">
+                </div>
+                <input type="text" id="m-link" placeholder="Stream/Video URL" class="form-group">
+                <textarea id="m-desc" placeholder="Description" class="form-group" rows="3"></textarea>
+                <button class="btn-green" onclick="addContent('movies')">Publish Movie</button>
+            </div>
+            <div class="card">
+                <h3>Library</h3>
+                <table id="table-movies">
+                    <thead><tr><th>Title</th><th>Action</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SERIES MANAGEMENT -->
+        <div id="tab-series" class="hidden">
+            <h2>Manage Series</h2>
+            <div class="card">
+                <h3><i class="fas fa-plus-circle"></i> Add New Series</h3>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <input type="text" id="s-title" placeholder="Title" class="form-group">
+                    <input type="text" id="s-poster" placeholder="Poster URL" class="form-group">
+                </div>
+                <textarea id="s-desc" placeholder="Description" class="form-group" rows="3"></textarea>
+                <button class="btn-green" onclick="addContent('series')">Publish Series</button>
+            </div>
+            <div class="card">
+                <h3>Library</h3>
+                <table id="table-series">
+                    <thead><tr><th>Title</th><th>Action</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- LIVE TV -->
+        <div id="tab-livetv" class="hidden">
+            <h2>Live TV Channels</h2>
+            <div class="card">
+                <h3>Add Channel</h3>
+                <input type="text" id="tv-name" placeholder="Channel Name" class="form-group">
+                <input type="text" id="tv-logo" placeholder="Logo URL" class="form-group">
+                <input type="text" id="tv-url" placeholder="Stream M3U8 URL" class="form-group">
+                <button class="btn-green" onclick="addTv()">Add Channel</button>
+            </div>
+            <div class="card">
+                <table id="table-tv"><tbody></tbody></table>
+            </div>
+        </div>
+
+        <!-- USERS -->
+        <div id="tab-users" class="hidden">
+            <h2>User Management</h2>
+            <div class="card">
+                <table id="table-users">
+                    <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- COMMENTS -->
+        <div id="tab-comments" class="hidden">
+             <h2>Comment Moderation</h2>
+             <div class="card" id="comments-container">
+                 <p>Loading comments...</p>
+             </div>
+        </div>
+
+        <!-- POLLS -->
+        <div id="tab-polls" class="hidden">
+            <h2>Poll Manager</h2>
+            <div class="card">
+                <h3>Create New Poll</h3>
+                <input type="text" id="poll-q" placeholder="Question (e.g. What should we add next?)" class="form-group">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <input type="text" id="poll-o1" placeholder="Option 1" class="form-group">
+                    <input type="text" id="poll-o2" placeholder="Option 2" class="form-group">
+                </div>
+                <button class="btn-blue" onclick="createPoll()">Launch Poll</button>
+                <button class="btn-red" onclick="disablePoll()">End Active Poll</button>
+            </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="tab-settings" class="hidden">
+            <h2>System Settings</h2>
+            <div class="card">
+                <label>Maintenance Mode</label>
+                <p style="font-size:0.8rem; color:#888;">When active, users cannot access the app.</p>
+                <button class="btn-red" onclick="toggleMaintenance(true)">ACTIVATE</button>
+                <button class="btn-green" onclick="toggleMaintenance(false)">DEACTIVATE</button>
+            </div>
+            <div class="card">
+                <h3>Ad Banner Control</h3>
+                <input type="text" id="ad-img" placeholder="Ad Image URL" class="form-group">
+                <input type="text" id="ad-link" placeholder="Target Link" class="form-group">
+                <button class="btn-blue" onclick="updateAd()">Update Ad</button>
+                <button class="btn-red" onclick="removeAd()">Disable Ad</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+        import { getDatabase, ref, set, get, onValue, push, remove, update } from "firebase/database";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUHXK7NYeM6CLNN4fsyGVz1MpIVpJuOq0",
+            authDomain: "studio-vddd5.firebaseapp.com",
+            databaseURL: "https://studio-vddd5-default-rtdb.firebaseio.com",
+            projectId: "studio-vddd5",
+            storageBucket: "studio-vddd5.firebasestorage.app",
+            messagingSenderId: "679230106233",
+            appId: "1:679230106233:web:3d6a91cabc2264e15902a8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // Security Check
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = 'user.html';
+            } else {
+                const uRef = ref(db, 'users/' + user.uid);
+                const s = await get(uRef);
+                if (!s.exists() || s.val().role !== 'admin') {
+                    alert("Access Denied: Admins Only");
+                    window.location.href = 'user.html';
+                } else {
+                    initAdmin();
+                }
+            }
+        });
+
+        document.getElementById('btn-logout').addEventListener('click', () => {
+            signOut(auth).then(() => window.location.href='user.html');
+        });
+
+        window.showTab = (id) => {
+            document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.querySelectorAll('.main > div').forEach(d => d.classList.add('hidden'));
+            document.getElementById('tab-' + id).classList.remove('hidden');
+        };
+
+        function initAdmin() {
+            // Stats
+            onValue(ref(db, 'users'), s => document.getElementById('count-users').innerText = s.size);
+            onValue(ref(db, 'content/movies'), s => document.getElementById('count-movies').innerText = s.size);
+            
+            // List Movies
+            onValue(ref(db, 'content/movies'), s => renderTable(s, 'table-movies', 'movies'));
+            // List Series
+            onValue(ref(db, 'content/series'), s => renderTable(s, 'table-series', 'series'));
+            // List TV
+            onValue(ref(db, 'content/livetv'), s => renderTable(s, 'table-tv', 'livetv'));
+            
+            // Users
+            onValue(ref(db, 'users'), s => {
+                const tbody = document.querySelector('#table-users tbody');
+                tbody.innerHTML = '';
+                s.forEach(u => {
+                    const data = u.val();
+                    const row = `<tr>
+                        <td>${data.email}</td>
+                        <td>${data.role}</td>
+                        <td>${data.blocked ? '<span style="color:red; font-weight:bold;">BLOCKED</span>' : '<span style="color:#2ecc71">Active</span>'}</td>
+                        <td>
+                            ${data.blocked 
+                              ? `<button class="btn-green" style="padding:5px 10px; font-size:0.8rem;" onclick="toggleBlock('${u.key}', false)">Unblock</button>` 
+                              : `<button class="btn-red" style="padding:5px 10px; font-size:0.8rem;" onclick="toggleBlock('${u.key}', true)">Block</button>`}
+                        </td>
+                    </tr>`;
+                    tbody.innerHTML += row;
+                });
+            });
+
+            // Load All Comments (Flat view for moderation)
+            loadAllComments();
+        }
+
+        function renderTable(snap, tableId, path) {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            tbody.innerHTML = '';
+            snap.forEach(c => {
+                const d = c.val();
+                tbody.innerHTML += `<tr>
+                    <td style="display:flex; align-items:center; gap:10px;"><img src="${d.poster || d.logo}" style="width:30px; height:30px; object-fit:cover; border-radius:4px;"> ${d.title || d.name}</td>
+                    <td><button class="btn-red" style="padding:5px 10px; font-size:0.8rem;" onclick="deleteItem('content/${path}/${c.key}')"><i class="fas fa-trash"></i></button></td>
+                </tr>`;
+            });
+        }
+
+        window.addContent = (type) => {
+            const prefix = type === 'movies' ? 'm' : 's';
+            const title = document.getElementById(`${prefix}-title`).value;
+            const poster = document.getElementById(`${prefix}-poster`).value;
+            const desc = document.getElementById(`${prefix}-desc`).value;
+            const link = type === 'movies' ? document.getElementById('m-link').value : '';
+
+            if(!title || !poster) return alert("Title and Poster are required");
+
+            push(ref(db, `content/${type}`), {
+                title, poster, description: desc, link, createdAt: Date.now()
+            });
+            alert("Content Added Successfully!");
+            
+            document.getElementById(`${prefix}-title`).value = '';
+            document.getElementById(`${prefix}-poster`).value = '';
+            document.getElementById(`${prefix}-desc`).value = '';
+            if(type === 'movies') document.getElementById('m-link').value = '';
+        };
+
+        window.addTv = () => {
+            push(ref(db, 'content/livetv'), {
+                name: document.getElementById('tv-name').value,
+                logo: document.getElementById('tv-logo').value,
+                streamUrl: document.getElementById('tv-url').value
+            });
+            alert("Channel Added");
+        };
+
+        window.deleteItem = (path) => {
+            if(confirm("Are you sure you want to delete this content?")) remove(ref(db, path));
+        };
+
+        window.toggleBlock = (uid, status) => {
+            update(ref(db, `users/${uid}`), { blocked: status });
+        };
+
+        // Polls
+        window.createPoll = () => {
+            set(ref(db, 'polls'), {
+                question: document.getElementById('poll-q').value,
+                active: true,
+                options: [
+                    { text: document.getElementById('poll-o1').value, votes: 0 },
+                    { text: document.getElementById('poll-o2').value, votes: 0 }
+                ]
+            });
+            alert("Poll Live!");
+        };
+
+        window.disablePoll = () => {
+            update(ref(db, 'polls'), { active: false });
+        };
+
+        // Settings
+        window.toggleMaintenance = (status) => {
+            update(ref(db, 'settings'), { maintenance: status });
+            alert("Maintenance Mode: " + (status ? "ON" : "OFF"));
+        };
+
+        window.updateAd = () => {
+            set(ref(db, 'ads'), {
+                active: true,
+                image: document.getElementById('ad-img').value,
+                link: document.getElementById('ad-link').value
+            });
+            alert("Ad Updated");
+        };
+        window.removeAd = () => remove(ref(db, 'ads'));
+
+        // Comment Moderation
+        function loadAllComments() {
+            onValue(ref(db, 'comments'), snap => {
+                const con = document.getElementById('comments-container');
+                con.innerHTML = '';
+                if(!snap.exists()) {
+                    con.innerHTML = "<p>No comments found.</p>";
+                    return;
+                }
+                snap.forEach(movieNode => {
+                    movieNode.forEach(userComment => {
+                        const c = userComment.val();
+                        const div = document.createElement('div');
+                        div.style.borderBottom = '1px solid #333';
+                        div.style.padding = '15px';
+                        div.style.marginBottom = '10px';
+                        div.style.background = '#252525';
+                        div.style.borderRadius = '4px';
+                        div.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <small style="color:var(--primary)">${c.email}</small>
+                                <small style="color:#666">${new Date(c.timestamp).toLocaleDateString()}</small>
+                            </div>
+                            <div style="color:white; margin-bottom:10px;">${c.text}</div>
+                            ${c.reply ? `<div style="padding:5px; background:#333; margin-bottom:10px; font-style:italic; font-size:0.9rem;">Admin Reply: ${c.reply}</div>` : ''}
+                            
+                            <div style="display:flex; gap:10px;">
+                                <button class="btn-blue" style="padding:5px 10px; font-size:0.8rem;" onclick="replyComment('${movieNode.key}', '${userComment.key}')">Reply</button>
+                                <button class="btn-red" style="padding:5px 10px; font-size:0.8rem;" onclick="deleteComment('${movieNode.key}', '${userComment.key}')">Delete</button>
+                            </div>
+                        `;
+                        con.appendChild(div);
+                    });
+                });
+            });
+        }
+
+        window.deleteComment = (mId, uId) => {
+            if(confirm("Delete this comment?")) remove(ref(db, `comments/${mId}/${uId}`));
+        };
+        window.replyComment = (mId, uId) => {
+            const txt = prompt("Enter reply:");
+            if(txt) update(ref(db, `comments/${mId}/${uId}`), { reply: txt });
+        };
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StreamStudio - User</title>
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- HLS Player for Live TV -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <!-- REQUIRED FOR FIREBASE TO WORK IN PLAIN HTML -->
+    <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+      }
+    }
+    </script>
+
+    <style>
+        :root {
+            --primary: #e50914; /* Netflix Red */
+            --bg: #000000;
+            --surface: #141414;
+            --text: #ffffff;
+            --text-sec: #b3b3b3;
+            --nav-height: 60px;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; padding-bottom: var(--nav-height); }
+        
+        /* Utility */
+        .hidden { display: none !important; }
+        .btn { border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; font-size: 1rem; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-sec { background: #333; color: white; margin-top: 10px; }
+        .btn:active { transform: scale(0.98); }
+        input { width: 100%; padding: 15px; margin-bottom: 10px; background: #333; border: 1px solid #444; color: white; border-radius: 4px; font-size: 1rem; }
+        .error-box { background: #e50914; color: white; padding: 10px; border-radius: 4px; font-size: 0.9em; margin-bottom: 10px; text-align: center; display: none; }
+
+        /* Auth Screen */
+        #auth-container { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; background: linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.8)), url('https://assets.nflxext.com/ffe/siteui/vlv3/f841d4c7-10e1-40af-bcae-07a3f8dc141a/f6d7434e-d6de-4185-a6d4-c77a2d08737b/US-en-20220502-popsignuptwoweeks-perspective_alpha_website_small.jpg'); background-size: cover; background-position: center; }
+        .auth-box { background: rgba(0,0,0,0.85); padding: 30px; border-radius: 8px; width: 100%; max-width: 400px; border: 1px solid #333; }
+        .logo { font-size: 2.5rem; color: var(--primary); font-weight: 800; text-align: center; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 10px rgba(229,9,20,0.5); }
+
+        /* App Header */
+        header { padding: 15px; background: rgba(0,0,0,0.95); position: sticky; top: 0; z-index: 100; display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(10px); border-bottom: 1px solid #333; }
+        .app-logo { font-weight: bold; color: var(--primary); font-size: 1.5rem; letter-spacing: 1px; }
+
+        /* Bottom Nav */
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; height: var(--nav-height); background: var(--surface); display: flex; justify-content: space-around; align-items: center; border-top: 1px solid #333; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { color: var(--text-sec); text-align: center; font-size: 0.7rem; display: flex; flex-direction: column; align-items: center; width: 20%; cursor: pointer; transition: 0.2s; }
+        .nav-item i { font-size: 1.4rem; margin-bottom: 4px; }
+        .nav-item.active { color: var(--primary); transform: translateY(-2px); }
+
+        /* Content Sections */
+        .section { padding: 15px; padding-bottom: 80px; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Cards */
+        h3 { border-left: 4px solid var(--primary); padding-left: 10px; margin-bottom: 15px; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        @media (min-width: 600px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+        
+        .card { position: relative; cursor: pointer; transition: 0.3s; }
+        .card:hover { transform: scale(1.05); z-index: 10; }
+        .card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        .card-title { font-size: 0.8rem; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #ddd; }
+
+        /* Live TV */
+        .channel-list { display: flex; flex-direction: column; gap: 10px; }
+        .channel-item { display: flex; align-items: center; background: #222; padding: 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; border: 1px solid transparent; }
+        .channel-item:hover { background: #333; border-color: var(--primary); }
+        .channel-logo { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; margin-right: 15px; background: #000; border: 1px solid #444; }
+
+        /* Modal */
+        #details-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 2000; overflow-y: auto; padding-bottom: 60px; }
+        .modal-header { position: absolute; top: 15px; right: 15px; z-index: 20; }
+        .close-btn { background: rgba(0,0,0,0.7); color: white; border: 2px solid white; padding: 8px 12px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; backdrop-filter: blur(5px); }
+        .hero-img { width: 100%; height: 50vh; object-fit: cover; mask-image: linear-gradient(to bottom, black 60%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%); }
+        .details-content { padding: 20px; position: relative; top: -50px; }
+        
+        /* Comments */
+        .comment-box { margin-top: 30px; border-top: 1px solid #333; padding-top: 20px; }
+        .comment { background: #222; padding: 12px; border-radius: 6px; margin-bottom: 10px; font-size: 0.9rem; border-left: 3px solid #444; }
+        .admin-reply { border-left: 2px solid var(--primary); padding-left: 10px; margin-top: 8px; color: var(--primary); font-size: 0.85rem; font-weight: bold; }
+
+        /* App Lock */
+        #pin-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .pin-dots { display: flex; gap: 15px; margin: 30px 0; }
+        .dot { width: 20px; height: 20px; border-radius: 50%; background: #333; transition: 0.2s; border: 2px solid #555; }
+        .dot.filled { background: var(--primary); border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
+    </style>
+</head>
+<body>
+
+    <!-- PIN LOCK OVERLAY -->
+    <div id="pin-overlay" class="hidden">
+        <div class="logo">LOCKED</div>
+        <div class="pin-dots" id="pin-dots">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 20px;">
+            <button class="btn btn-sec" onclick="enterPin(1)">1</button>
+            <button class="btn btn-sec" onclick="enterPin(2)">2</button>
+            <button class="btn btn-sec" onclick="enterPin(3)">3</button>
+            <button class="btn btn-sec" onclick="enterPin(4)">4</button>
+            <button class="btn btn-sec" onclick="enterPin(5)">5</button>
+            <button class="btn btn-sec" onclick="enterPin(6)">6</button>
+            <button class="btn btn-sec" onclick="enterPin(7)">7</button>
+            <button class="btn btn-sec" onclick="enterPin(8)">8</button>
+            <button class="btn btn-sec" onclick="enterPin(9)">9</button>
+            <button class="btn btn-sec" style="grid-column: 2;" onclick="enterPin(0)">0</button>
+        </div>
+    </div>
+
+    <!-- AUTH SCREEN -->
+    <div id="auth-container">
+        <div class="auth-box">
+            <div class="logo">STREAM STUDIO</div>
+            <div id="auth-error" class="error-box"></div>
+            
+            <input type="email" id="email" placeholder="Email Address">
+            <input type="password" id="password" placeholder="Password">
+            
+            <button id="btn-login" class="btn btn-primary">Sign In</button>
+            <button id="btn-register" class="btn btn-sec">Create Account</button>
+            <button id="btn-google" class="btn btn-sec" style="background: white; color: black; font-weight:bold;"><i class="fab fa-google"></i> &nbsp;Google Login</button>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app-container" class="hidden">
+        <header>
+            <div class="app-logo">STUDIO</div>
+            <i class="fas fa-power-off" id="logout-icon" style="cursor:pointer; font-size:1.2rem; color: #fff;"></i>
+        </header>
+
+        <!-- 1. HOME TAB -->
+        <div id="tab-home" class="section">
+            <!-- Active Poll -->
+            <div id="poll-area" style="background: linear-gradient(45deg, #222, #111); padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #333; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+                <h4 id="poll-question" style="margin-top:0; color: var(--primary);"></h4>
+                <div id="poll-options"></div>
+            </div>
+
+            <!-- Ad Banner -->
+            <div id="home-ad" class="ad-banner hidden" style="width:100%; height:80px; margin-bottom:20px; border-radius:8px; overflow:hidden;"></div>
+
+            <h3>Trending Movies</h3>
+            <div class="grid" id="movie-grid"></div>
+            
+            <h3 style="margin-top:30px">Original Series</h3>
+            <div class="grid" id="series-grid"></div>
+        </div>
+
+        <!-- 2. WISHLIST TAB -->
+        <div id="tab-wishlist" class="section hidden">
+            <h3>My Watchlist</h3>
+            <div class="grid" id="wishlist-grid"></div>
+            <div id="empty-wishlist" class="hidden" style="display:flex; flex-direction:column; align-items:center; margin-top:100px; color:#555;">
+                <i class="fas fa-folder-open" style="font-size:3rem; margin-bottom:10px;"></i>
+                <p>Your list is empty.</p>
+            </div>
+        </div>
+
+        <!-- 3. LIVE TV TAB -->
+        <div id="tab-livetv" class="section hidden">
+            <h3>Live Channels</h3>
+            <div class="channel-list" id="channel-list"></div>
+        </div>
+
+        <!-- 4. UPCOMING TAB -->
+        <div id="tab-upcoming" class="section hidden">
+            <h3>Coming Soon</h3>
+            <div class="grid" id="upcoming-grid"></div>
+        </div>
+
+        <!-- 5. PROFILE TAB -->
+        <div id="tab-profile" class="section hidden">
+            <div style="background:#222; padding:30px; border-radius:10px; text-align:center; margin-bottom:20px;">
+                <div style="width:80px; height:80px; background:var(--primary); border-radius:50%; margin:0 auto 15px; display:flex; align-items:center; justify-content:center; font-size:2.5rem; font-weight:bold; box-shadow:0 0 15px var(--primary);" id="profile-initial">U</div>
+                <h3 id="profile-email" style="margin:0; border:none;">user@email.com</h3>
+                <span style="font-size:0.8rem; color:var(--text-sec)" id="profile-uid">UID: ...</span>
+            </div>
+            
+            <div style="background:#222; border-radius:8px; overflow:hidden;">
+                <div class="profile-row" style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between;">
+                    <span><i class="fas fa-clock"></i> Joined</span>
+                    <span id="profile-date" style="color:#aaa;">-</span>
+                </div>
+                
+                <div class="profile-row" style="padding:15px; display:flex; justify-content:space-between; align-items:center;">
+                    <span><i class="fas fa-lock"></i> App Lock</span>
+                    <button class="btn btn-sec" style="width:auto; padding:5px 15px; margin:0;" onclick="setupPin()">Set PIN</button>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" style="margin-top:30px; background:#333; border:1px solid #555;" id="btn-logout-main">Log Out</button>
+        </div>
+
+        <!-- BOTTOM NAV -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" data-target="tab-home"><i class="fas fa-home"></i>Home</div>
+            <div class="nav-item" data-target="tab-wishlist"><i class="fas fa-bookmark"></i>List</div>
+            <div class="nav-item" data-target="tab-livetv"><i class="fas fa-tv"></i>Live</div>
+            <div class="nav-item" data-target="tab-upcoming"><i class="fas fa-calendar"></i>Soon</div>
+            <div class="nav-item" data-target="tab-profile"><i class="fas fa-user"></i>User</div>
+        </nav>
+    </div>
+
+    <!-- DETAILS MODAL -->
+    <div id="details-modal" class="hidden">
+        <div class="modal-header">
+            <button class="close-btn" onclick="closeModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <img src="" id="detail-img" class="hero-img">
+        <div class="details-content">
+            <h1 id="detail-title" style="font-size:2rem; margin-bottom:5px; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">Title</h1>
+            <div class="meta-tags" style="margin-bottom: 15px;">
+                <span id="detail-cat" style="background:var(--primary); padding:3px 8px; border-radius:4px; font-size:0.7rem; font-weight:bold;">MOVIE</span>
+            </div>
+            <p id="detail-desc" style="color:#ccc; line-height:1.6; font-size:0.95rem;">Description goes here...</p>
+            
+            <div style="display:flex; gap:10px; margin-top:25px;">
+                <button id="btn-watch" class="btn btn-primary" style="flex:2;"><i class="fas fa-play"></i> Watch Now</button>
+                <button id="btn-wishlist-toggle" class="btn btn-sec" style="margin-top:0; flex:1; background:#333; border:1px solid #555;"><i class="fas fa-plus"></i></button>
+            </div>
+
+            <div class="comment-box">
+                <h4 style="margin-bottom:15px;">Discussion</h4>
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <input type="text" id="comment-input" placeholder="Say something..." style="margin:0;">
+                    <button class="btn btn-primary" style="width:auto; margin:0;" onclick="postComment()"><i class="fas fa-paper-plane"></i></button>
+                </div>
+                <div id="comments-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIDEO PLAYER MODAL -->
+    <div id="tv-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:black; z-index:3000; display:flex; flex-direction:column; justify-content:center;">
+        <button onclick="closeTv()" style="position:absolute; top:20px; right:20px; z-index:10; background:rgba(255,255,255,0.2); color:white; border:none; padding:15px; border-radius:50%; font-size:1.5rem;">&times;</button>
+        <video id="video-player" controls autoplay playsinline style="width:100%; max-height:100vh;"></video>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
+        import { getDatabase, ref, set, get, onValue, push, remove, update } from "firebase/database";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUHXK7NYeM6CLNN4fsyGVz1MpIVpJuOq0",
+            authDomain: "studio-vddd5.firebaseapp.com",
+            databaseURL: "https://studio-vddd5-default-rtdb.firebaseio.com",
+            projectId: "studio-vddd5",
+            storageBucket: "studio-vddd5.firebasestorage.app",
+            messagingSenderId: "679230106233",
+            appId: "1:679230106233:web:3d6a91cabc2264e15902a8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // State
+        let currentUser = null;
+        let currentMovieId = null;
+        let pinEntry = "";
+
+        // DOM Elements
+        const authView = document.getElementById('auth-container');
+        const appView = document.getElementById('app-container');
+        const authError = document.getElementById('auth-error');
+        const emailInput = document.getElementById('email');
+        const passInput = document.getElementById('password');
+
+        // --- AUTH LOGIC ---
+        function showError(msg) {
+            authError.style.display = 'block';
+            authError.innerText = msg.replace('Firebase: ', '').replace('auth/', '');
+        }
+
+        async function saveUser(user) {
+            const userRef = ref(db, 'users/' + user.uid);
+            const snapshot = await get(userRef);
+            if (!snapshot.exists()) {
+                await set(userRef, {
+                    email: user.email,
+                    role: 'user',
+                    provider: user.providerData[0]?.providerId || 'password',
+                    createdAt: new Date().toISOString(),
+                    lastLogin: new Date().toISOString()
+                });
+            } else {
+                await update(userRef, { lastLogin: new Date().toISOString() });
+            }
+        }
+
+        document.getElementById('btn-login').addEventListener('click', () => {
+            if(!emailInput.value || !passInput.value) return showError("Please enter credentials");
+            signInWithEmailAndPassword(auth, emailInput.value, passInput.value)
+                .catch(e => showError(e.message));
+        });
+
+        document.getElementById('btn-register').addEventListener('click', () => {
+            if(!emailInput.value || !passInput.value) return showError("Please enter credentials");
+            createUserWithEmailAndPassword(auth, emailInput.value, passInput.value)
+                .then((cred) => saveUser(cred.user))
+                .catch(e => showError(e.message));
+        });
+
+        document.getElementById('btn-google').addEventListener('click', () => {
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider)
+                .then((cred) => saveUser(cred.user))
+                .catch(e => showError(e.message));
+        });
+
+        document.getElementById('logout-icon').addEventListener('click', () => signOut(auth));
+        document.getElementById('btn-logout-main').addEventListener('click', () => signOut(auth));
+
+        // --- PIN LOCK SYSTEM ---
+        window.enterPin = (num) => {
+            pinEntry += num;
+            const dots = document.querySelectorAll('.dot');
+            if(pinEntry.length <= 4) dots[pinEntry.length-1].classList.add('filled');
+            
+            if (pinEntry.length === 4) {
+                const savedPin = localStorage.getItem('appPin');
+                if (pinEntry === savedPin) {
+                    document.getElementById('pin-overlay').classList.add('hidden');
+                    pinEntry = "";
+                } else {
+                    alert("Wrong PIN");
+                    pinEntry = "";
+                    dots.forEach(d => d.classList.remove('filled'));
+                }
+            }
+        };
+
+        window.setupPin = () => {
+            const newPin = prompt("Enter new 4-digit PIN (or leave empty to disable)");
+            if(newPin === "") {
+                localStorage.removeItem('appPin');
+                alert("PIN Removed");
+            } else if(newPin && newPin.length === 4 && !isNaN(newPin)) {
+                localStorage.setItem('appPin', newPin);
+                alert("PIN Set! Next time you open the app you will need it.");
+            } else if (newPin) {
+                alert("Invalid PIN. Must be 4 digits.");
+            }
+        };
+
+        // --- MAIN APP LOGIC ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Check if blocked
+                const uRef = ref(db, 'users/' + user.uid);
+                get(uRef).then(s => {
+                    if(s.exists() && s.val().blocked) {
+                        alert("Your account has been blocked by Admin.");
+                        signOut(auth);
+                        return;
+                    }
+                });
+
+                currentUser = user;
+                authView.classList.add('hidden');
+                appView.classList.remove('hidden');
+                
+                // PIN Check
+                if(localStorage.getItem('appPin')) {
+                    document.getElementById('pin-overlay').classList.remove('hidden');
+                    // Reset dots
+                    document.querySelectorAll('.dot').forEach(d => d.classList.remove('filled'));
+                    pinEntry = "";
+                }
+
+                loadHome();
+                loadProfile();
+                listenForMaintenance();
+            } else {
+                currentUser = null;
+                authView.classList.remove('hidden');
+                appView.classList.add('hidden');
+            }
+        });
+
+        function listenForMaintenance() {
+            onValue(ref(db, 'settings/maintenance'), (snap) => {
+                if(snap.val() === true) { 
+                    // Check if admin to bypass
+                    get(ref(db, `users/${currentUser.uid}/role`)).then(roleSnap => {
+                        if(roleSnap.val() !== 'admin') {
+                            document.body.innerHTML = "<div style='color:white;text-align:center;padding:50px;font-family:sans-serif;'><h1>MAINTENANCE MODE</h1><p>We are upgrading servers. Please check back later.</p></div>";
+                        }
+                    });
+                }
+            });
+        }
+
+        // --- NAVIGATION ---
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                
+                document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+                document.getElementById(item.dataset.target).classList.remove('hidden');
+
+                if(item.dataset.target === 'tab-wishlist') loadWishlist();
+                if(item.dataset.target === 'tab-livetv') loadLiveTv();
+                if(item.dataset.target === 'tab-upcoming') loadUpcoming();
+            });
+        });
+
+        // --- HOME TAB DATA ---
+        function loadHome() {
+            // Movies
+            onValue(ref(db, 'content/movies'), (snapshot) => {
+                const grid = document.getElementById('movie-grid');
+                grid.innerHTML = '';
+                snapshot.forEach(child => {
+                    const m = child.val();
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `<img src="${m.poster}"><div class="card-title">${m.title}</div>`;
+                    div.onclick = () => openDetails(child.key, m, 'movies');
+                    grid.appendChild(div);
+                });
+            });
+            // Series
+            onValue(ref(db, 'content/series'), (snapshot) => {
+                const grid = document.getElementById('series-grid');
+                grid.innerHTML = '';
+                snapshot.forEach(child => {
+                    const m = child.val();
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `<img src="${m.poster}"><div class="card-title">${m.title}</div>`;
+                    div.onclick = () => openDetails(child.key, m, 'series');
+                    grid.appendChild(div);
+                });
+            });
+            // Ads
+            onValue(ref(db, 'ads'), (snap) => {
+                const ad = document.getElementById('home-ad');
+                if(snap.exists() && snap.val().active) {
+                    ad.classList.remove('hidden');
+                    ad.innerHTML = `<a href="${snap.val().link}" target="_blank" style="display:block;height:100%"><img src="${snap.val().image}" style="width:100%;height:100%;object-fit:cover;"></a>`;
+                } else {
+                    ad.classList.add('hidden');
+                }
+            });
+            // Polls
+            onValue(ref(db, 'polls'), (snap) => {
+                const area = document.getElementById('poll-area');
+                if(snap.exists() && snap.val().active) {
+                    area.style.display = 'block';
+                    document.getElementById('poll-question').innerText = snap.val().question;
+                    const optsDiv = document.getElementById('poll-options');
+                    optsDiv.innerHTML = '';
+                    const options = snap.val().options || [];
+                    options.forEach((opt, idx) => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-sec';
+                        btn.style.marginTop = '8px';
+                        btn.style.textAlign = 'left';
+                        btn.style.display = 'flex';
+                        btn.style.justifyContent = 'space-between';
+                        btn.innerHTML = `<span>${opt.text}</span> <span style="color:var(--primary); font-weight:bold;">${opt.votes || 0}</span>`;
+                        btn.onclick = () => {
+                            const vRef = ref(db, `polls/options/${idx}/votes`);
+                            get(vRef).then(s => set(vRef, (s.val()||0) + 1));
+                            btn.style.borderColor = 'var(--primary)';
+                        };
+                        optsDiv.appendChild(btn);
+                    });
+                } else {
+                    area.style.display = 'none';
+                }
+            });
+        }
+
+        // --- UPCOMING ---
+        function loadUpcoming() {
+             onValue(ref(db, 'content/upcoming'), (snapshot) => {
+                const grid = document.getElementById('upcoming-grid');
+                grid.innerHTML = '';
+                snapshot.forEach(child => {
+                    const m = child.val();
+                    // Assuming structure exists
+                });
+                if(!grid.innerHTML) grid.innerHTML = "<p style='color:#666'>No upcoming releases.</p>";
+            });
+        }
+
+        // --- LIVE TV ---
+        function loadLiveTv() {
+            onValue(ref(db, 'content/livetv'), (snapshot) => {
+                const list = document.getElementById('channel-list');
+                list.innerHTML = '';
+                snapshot.forEach(child => {
+                    const ch = child.val();
+                    const item = document.createElement('div');
+                    item.className = 'channel-item';
+                    item.innerHTML = `<img src="${ch.logo}" class="channel-logo"><div><strong>${ch.name}</strong><br><small style="color:#aaa">LIVE</small></div><i class="fas fa-play" style="margin-left:auto; color:var(--primary)"></i>`;
+                    item.onclick = () => playHls(ch.streamUrl);
+                    list.appendChild(item);
+                });
+            });
+        }
+
+        window.playHls = (url) => {
+            const modal = document.getElementById('tv-modal');
+            const video = document.getElementById('video-player');
+            modal.classList.remove('hidden');
+            
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+            }
+        }
+        window.closeTv = () => {
+             document.getElementById('tv-modal').classList.add('hidden');
+             const video = document.getElementById('video-player');
+             video.pause();
+             video.src = "";
+        }
+
+        // --- DETAILS & ACTIONS ---
+        window.openDetails = (key, data, type) => {
+            currentMovieId = key;
+            document.getElementById('details-modal').classList.remove('hidden');
+            document.getElementById('detail-img').src = data.poster;
+            document.getElementById('detail-title').innerText = data.title;
+            document.getElementById('detail-desc').innerText = data.description || "No description available.";
+            document.getElementById('detail-cat').innerText = type.toUpperCase();
+            
+            // Watch Button
+            document.getElementById('btn-watch').onclick = () => {
+                window.open(data.link, '_blank');
+            };
+
+            // Wishlist Button State
+            const wRef = ref(db, `wishlist/${currentUser.uid}/${key}`);
+            onValue(wRef, (snap) => {
+                const btn = document.getElementById('btn-wishlist-toggle');
+                if(snap.exists()) {
+                    btn.innerHTML = '<i class="fas fa-check"></i>';
+                    btn.style.color = 'var(--primary)';
+                    btn.onclick = () => remove(wRef);
+                } else {
+                    btn.innerHTML = '<i class="fas fa-plus"></i>';
+                    btn.style.color = 'white';
+                    btn.onclick = () => set(wRef, { ...data, type });
+                }
+            }, {onlyOnce: false}); 
+
+            loadComments(key);
+        };
+
+        window.closeModal = () => {
+            document.getElementById('details-modal').classList.add('hidden');
+        };
+
+        // --- COMMENTS ---
+        function loadComments(movieId) {
+            const cList = document.getElementById('comments-list');
+            onValue(ref(db, `comments/${movieId}`), (snap) => {
+                cList.innerHTML = '';
+                if(!snap.exists()) {
+                    cList.innerHTML = "<p style='color:#555; font-style:italic;'>No comments yet. Be the first!</p>";
+                    return;
+                }
+                snap.forEach(c => {
+                    const val = c.val();
+                    const div = document.createElement('div');
+                    div.className = 'comment';
+                    let html = `<div style="display:flex; justify-content:space-between;"><strong style="color:var(--primary)">${val.email.split('@')[0]}</strong> <small style="color:#666">${new Date(val.timestamp).toLocaleDateString()}</small></div><div style="margin-top:5px;">${val.text}</div>`;
+                    if(val.reply) {
+                        html += `<div class="admin-reply"><i class="fas fa-user-shield"></i> Admin: ${val.reply}</div>`;
+                    }
+                    div.innerHTML = html;
+                    cList.appendChild(div);
+                });
+            });
+        }
+
+        window.postComment = () => {
+            const txt = document.getElementById('comment-input').value;
+            if(!txt) return;
+            // Key is UID to ensure one comment per user
+            set(ref(db, `comments/${currentMovieId}/${currentUser.uid}`), {
+                text: txt,
+                email: currentUser.email,
+                timestamp: Date.now()
+            });
+            document.getElementById('comment-input').value = '';
+        };
+
+        // --- WISHLIST TAB ---
+        function loadWishlist() {
+            const grid = document.getElementById('wishlist-grid');
+            onValue(ref(db, `wishlist/${currentUser.uid}`), (snap) => {
+                grid.innerHTML = '';
+                if(!snap.exists()) {
+                    document.getElementById('empty-wishlist').classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('empty-wishlist').classList.add('hidden');
+                snap.forEach(c => {
+                    const m = c.val();
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `<img src="${m.poster}"><div class="card-title">${m.title}</div>`;
+                    div.onclick = () => openDetails(c.key, m, m.type);
+                    grid.appendChild(div);
+                });
+            });
+        }
+
+        // --- PROFILE ---
+        function loadProfile() {
+            document.getElementById('profile-email').innerText = currentUser.email;
+            document.getElementById('profile-initial').innerText = currentUser.email[0].toUpperCase();
+            document.getElementById('profile-uid').innerText = "ID: " + currentUser.uid.substring(0,8) + "...";
+            
+            get(ref(db, 'users/' + currentUser.uid)).then(s => {
+                if(s.exists()) {
+                    const d = new Date(s.val().createdAt);
+                    document.getElementById('profile-date').innerText = d.toLocaleDateString();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
